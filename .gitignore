@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+
+# Database (never commit chain data or wallet secrets)
+database/*.db
+database/*.sqlite3
+
+# Logs
+logs/*.log
+logs/*.log.*
+
+# Environment / secrets
+.env
+.env.local
+*.pem
+*.key
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Termux-specific
+.termux/
