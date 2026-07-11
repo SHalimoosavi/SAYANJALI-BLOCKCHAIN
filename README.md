@@ -1,147 +1,262 @@
+![Python](https://img.shields.io/badge/python-3.13%2B-blue)
+![FastAPI](https://img.shields.io/badge/framework-FastAPI-009688)
+![License](https://img.shields.io/badge/license-MIT-green)
+![Tests](https://img.shields.io/badge/tests-37%20passing-brightgreen)
+![Version](https://img.shields.io/badge/version-v0.1.0--mvp-orange)
+![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS%20%7C%20Android-lightgrey)
+![GitHub Stars](https://img.shields.io/github/stars/sayanjali-nexus/sayanjali-blockchain?style=social)
+![GitHub Issues](https://img.shields.io/github/issues/sayanjali-nexus/sayanjali-blockchain)
+![GitHub Forks](https://img.shields.io/github/forks/sayanjali-nexus/sayanjali-blockchain?style=social)
+
 # SAYANJALI BLOCKCHAIN
 
-**A native Layer-1 blockchain MVP powering the SYJ Token, built by
-SAYANJALI NEXUS PRIVATE LIMITED.**
+**SAYANJALI BLOCKCHAIN** is an independent Layer-1 blockchain implementation
+and the native settlement layer for the **SYJ Token**. It is developed and
+maintained by **SAYANJALI NEXUS PRIVATE LIMITED** as open, modular
+infrastructure — not a token contract deployed on an existing chain, but a
+purpose-built chain with its own block format, consensus engine, wallet
+system, and node software.
 
-SAYANJALI BLOCKCHAIN is not an ERC-20/BEP-20 token deployed on an existing
-chain — it is an independent blockchain implementation, currently at MVP
-stage, architected to grow into a production-grade Layer-1 network. This
-repository contains a clean, fully tested, modular foundation: blockchain
-core, wallets, signed transactions, Proof-of-Work mining, persistent
-storage, a REST API, and a CLI — all buildable and runnable entirely from
-an Android phone via Termux.
+This repository contains the current MVP release: a complete, tested
+reference implementation of the chain's core primitives, structured so that
+networking, alternative consensus mechanisms, and a smart contract runtime
+can be added as independent modules in subsequent phases.
 
-## Status
+---
 
-**MVP — Phases 1 through 5 complete.** 37 automated tests passing across
-wallets, transactions, blocks, mining, chain validation, and the full REST
-API. See [ROADMAP.md](ROADMAP.md) for what's next.
+## Table of Contents
+
+- [Project Overview](#project-overview)
+- [Core Principles](#core-principles)
+- [Features](#features)
+- [Architecture](#architecture)
+- [Repository Structure](#repository-structure)
+- [Technology Stack](#technology-stack)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Running the Node](#running-the-node)
+- [API Documentation](#api-documentation)
+- [CLI Commands](#cli-commands)
+- [Configuration](#configuration)
+- [Testing](#testing)
+- [Security](#security)
+- [Roadmap](#roadmap)
+- [Contributing](#contributing)
+- [License](#license)
+- [Disclaimer](#disclaimer)
+- [Project Vision & Architecture](#project-vision--architecture)
+
+---
 
 ## Project Overview
 
-SAYANJALI BLOCKCHAIN implements the core primitives every Layer-1 network
-needs — a chain of cryptographically linked blocks, wallets, signed
-transactions, a Proof-of-Work consensus engine, a mempool, persistent
-storage, and both a REST API and a CLI for operating a node — while keeping
-every layer modular enough that P2P networking, alternate consensus
-algorithms, and smart contracts can be added later without restructuring
-what's already here.
+Distributed ledgers built directly on top of general-purpose smart contract
+platforms inherit those platforms' constraints — fee markets, execution
+limits, and governance they do not control. SAYANJALI BLOCKCHAIN exists to
+give the SAYANJALI NEXUS ecosystem and the SYJ Token a chain of their own:
+one where consensus rules, economic parameters, and the upgrade path are
+defined by the protocol itself rather than inherited from a host network.
+
+The long-term objective is a production-grade Layer-1 network supporting
+native transfers, staking, smart contract execution, and interoperability
+with external chains. The current release is the foundation that objective
+is built on: a correctly implemented block model, a working Proof-of-Work
+consensus engine, cryptographically signed transactions, persistent
+storage, and both a REST API and a command-line interface for operating a
+node.
+
+Every architectural decision in this MVP is made with that trajectory in
+mind — consensus is defined behind an interface rather than hard-coded,
+storage is accessed through an abstraction rather than a specific database
+driver, and the API and CLI are both thin clients over one authoritative
+chain implementation.
+
+## Core Principles
+
+| Principle | Description |
+|---|---|
+| **Security** | Signature verification, hash-chained blocks, and header-authenticated difficulty on every block. |
+| **Transparency** | Deterministic, auditable state transitions with a fully open, dependency-minimal codebase. |
+| **Scalability** | Header-only block hashing and a storage layer that scales from SQLite to PostgreSQL without code changes. |
+| **Modularity** | Consensus, storage, validation, and networking are isolated behind clear interfaces. |
+| **Extensibility** | New consensus algorithms, transaction types, and node capabilities can be added without modifying core modules. |
+| **Performance** | Lightweight block headers and indexed persistence keep validation and mining costs predictable. |
+| **Open Architecture** | No proprietary formats. Standard cryptographic primitives (SHA-256, ECDSA/SECP256k1) throughout. |
 
 ## Features
 
-| Capability | Status |
-|---|---|
-| Block model, hashing, Merkle root, genesis | ✅ |
-| ECDSA (SECP256k1) wallets | ✅ |
-| Signed, verifiable transactions | ✅ |
-| Proof-of-Work consensus + mining rewards | ✅ |
-| Mempool with duplicate prevention | ✅ |
-| Persistent storage (SQLite via SQLAlchemy) | ✅ |
-| REST API (FastAPI) | ✅ |
-| CLI (Typer + Rich) | ✅ |
-| Structured logging | ✅ |
-| Test suite (pytest) | ✅ |
-| P2P networking | 🔜 Phase 6 |
-| Smart contracts | 🔜 Phase 9 |
+| Category | Capability | Status |
+|---|---|---|
+| Blockchain Core | Genesis block, block hashing, Merkle-root transaction integrity | Implemented |
+| Blockchain Core | Full chain validation from genesis to tip | Implemented |
+| Consensus | Proof-of-Work mining with configurable, per-block difficulty | Implemented |
+| Consensus | Header-authenticated difficulty (tamper-evident) | Implemented |
+| Wallet System | ECDSA (SECP256k1) key generation and address derivation | Implemented |
+| Wallet System | Address format validation and balance lookup | Implemented |
+| Transaction Engine | Digitally signed, independently verifiable transactions | Implemented |
+| Transaction Engine | Mempool with duplicate and signature validation | Implemented |
+| Validation | Block, chain, and transaction-level validation rules | Implemented |
+| Persistent Storage | SQLAlchemy-backed storage, SQLite by default | Implemented |
+| REST API | FastAPI node interface with OpenAPI documentation | Implemented |
+| CLI | Typer-based command-line node operations | Implemented |
+| Configuration | Centralized, environment-variable-driven settings | Implemented |
+| Testing | Automated test suite (37 tests) across all modules | Implemented |
+| Networking | Peer-to-peer block and transaction propagation | Planned |
+| Consensus | Proof-of-Stake / Delegated Proof-of-Stake | Planned |
+| Execution | Smart contract runtime | Planned |
 
 ## Architecture
 
-```
-┌─────────────┐     ┌─────────────┐
-│   cli/      │     │   api/      │   ← application layer (CLI, REST API)
-└──────┬──────┘     └──────┬──────┘
-       │                   │
-       └─────────┬─────────┘
-                  │
-          ┌───────▼────────┐
-          │  Blockchain     │        ← orchestrator (blockchain/blockchain.py)
-          │  (facade)       │
-          └───────┬────────┘
-                   │
-   ┌───────────────┼───────────────┬────────────────┐
-   │               │               │                │
-┌──▼───┐      ┌────▼────┐    ┌─────▼─────┐    ┌─────▼─────┐
-│Block │      │Consensus│    │  Mempool  │    │  Storage  │
-│model │      │ (PoW)   │    │           │    │(SQLAlchemy)│
-└──────┘      └─────────┘    └───────────┘    └───────────┘
+SAYANJALI BLOCKCHAIN separates concerns into four layers: client interfaces
+(API and CLI), the chain orchestrator, the pluggable core engines
+(consensus, mempool, storage), and the underlying data model (blocks and
+transactions).
+
+```mermaid
+flowchart TD
+    W[Wallet] --> T[Transaction]
+    T --> M[Mempool]
+    M --> C[Consensus Engine]
+    C --> B[Block Production]
+    B --> BC[Blockchain]
+    BC --> S[Storage Layer]
+    BC --> A[REST API]
+    A --> CLI[CLI]
 ```
 
-### Key design decisions
+```mermaid
+flowchart LR
+    subgraph Client Interfaces
+        CLI2[CLI]
+        API2[REST API]
+    end
+    subgraph Orchestration
+        FACADE[Blockchain Facade]
+    end
+    subgraph Core Engines
+        CONSENSUS[Consensus Engine]
+        MEMPOOL[Mempool]
+        STORAGE[Storage Layer]
+    end
 
-- **Consensus is pluggable.** `blockchain/consensus.py` defines an abstract
-  `ConsensusEngine` interface. Proof of Work is the only implementation
-  today, but Proof of Stake / Delegated Proof of Stake can be added as new
-  classes without touching `Blockchain` or any other module.
-- **Storage is swappable.** `blockchain/storage.py` is built on SQLAlchemy
-  Core, not raw `sqlite3`. Moving from SQLite to PostgreSQL later is a
-  one-line change to `database_url` in `config/settings.py` — no code
-  changes required anywhere else.
-- **Block hashing is header-only.** A block's hash covers only its header
-  fields (index, previous_hash, timestamp, nonce, difficulty, merkle_root),
-  not the full transaction list. This keeps mining cheap regardless of
-  block size, while the Merkle root still guarantees transaction integrity.
-- **Difficulty is recorded per block, not assumed globally.** Each block
-  stores the difficulty it was actually mined at (and that value is part of
-  the hashed header, so it can't be tampered with independently). This
-  allows the network's difficulty to legitimately retarget over time
-  without invalidating historical blocks.
-- **API and CLI share one core.** Both `api/routes.py` and `cli/main.py`
-  call into the same `Blockchain` facade — there is exactly one source of
-  truth for chain logic.
+    CLI2 --> FACADE
+    API2 --> FACADE
+    FACADE --> CONSENSUS
+    FACADE --> MEMPOOL
+    FACADE --> STORAGE
+```
 
-## Folder Structure
+### Design Decisions
+
+**Pluggable consensus.** The consensus layer is defined behind an abstract
+`ConsensusEngine` interface. Proof of Work is the reference implementation;
+Proof of Stake and Delegated Proof of Stake can be introduced as additional
+implementations without modifying the orchestrator or any client-facing
+code.
+
+**Storage abstraction.** Persistence is implemented on SQLAlchemy Core
+rather than a database-specific driver. The default backend is SQLite;
+migrating to PostgreSQL is a configuration change, not a code change.
+
+**Header-only block hashing.** A block's hash is computed from its header
+fields — index, previous hash, timestamp, nonce, difficulty, and Merkle
+root — rather than its full transaction payload. This keeps proof-of-work
+cost independent of block size while the Merkle root still guarantees
+transaction-level integrity.
+
+**Per-block difficulty recording.** Each block records the difficulty it
+was mined at, and that value is covered by the block's own hash. This
+permits legitimate difficulty retargeting over time without invalidating
+previously accepted blocks.
+
+**Single source of truth.** Both the REST API and the CLI operate through
+one `Blockchain` facade. There is exactly one implementation of chain
+logic; client interfaces do not duplicate business rules.
+
+## Repository Structure
 
 ```
 sayanjali-blockchain/
 ├── blockchain/
-│   ├── block.py          # Block model, hashing, Merkle root, genesis
+│   ├── block.py          # Block model, hashing, Merkle root, genesis block
 │   ├── blockchain.py     # Orchestrator: chain state, mining, validation
-│   ├── consensus.py      # Pluggable consensus engine (PoW implemented)
+│   ├── consensus.py      # Consensus interface and Proof-of-Work engine
 │   ├── mempool.py        # Pending transaction pool
-│   ├── mining.py         # Coinbase + block assembly for mining
-│   ├── storage.py        # SQLAlchemy-backed persistence
+│   ├── mining.py         # Block assembly and coinbase issuance
+│   ├── storage.py        # SQLAlchemy-backed persistence layer
 │   ├── transaction.py    # Transaction model, signing, verification
-│   ├── utils.py          # Hashing, logging, shared exceptions
-│   ├── validators.py     # Block/chain/transaction validation rules
-│   └── wallet.py         # ECDSA key generation, addresses, signing
+│   ├── utils.py          # Hashing, logging, shared exception types
+│   ├── validators.py     # Block, chain, and transaction validation rules
+│   └── wallet.py         # Key generation, address derivation, signing
 ├── api/
-│   ├── main.py           # FastAPI app entrypoint
-│   ├── routes.py         # All REST endpoints
-│   └── schemas.py        # Pydantic request/response models
+│   ├── main.py            # FastAPI application entrypoint
+│   ├── routes.py          # REST endpoint definitions
+│   └── schemas.py         # Request and response models
 ├── cli/
-│   └── main.py           # Typer CLI commands
+│   └── main.py             # Command-line interface
 ├── config/
-│   └── settings.py       # Central configuration (env-var driven)
-├── database/              # SQLite file lives here (gitignored)
-├── logs/                  # Rotating log files (gitignored)
-├── tests/                 # pytest suite (37 tests)
+│   └── settings.py         # Centralized, environment-driven configuration
+├── database/                # Persisted chain data (excluded from version control)
+├── logs/                     # Structured log output (excluded from version control)
+├── tests/                    # Automated test suite
 ├── requirements.txt
 ├── README.md
 ├── LICENSE
-├── .gitignore
-├── SETUP_TERMUX.md
-├── GITHUB_WORKFLOW.md
-├── TESTING.md
-├── TROUBLESHOOTING.md
-└── ROADMAP.md
+└── .gitignore
 ```
 
+Each top-level directory corresponds to a single architectural
+responsibility: `blockchain/` owns chain logic and has no dependency on
+`api/` or `cli/`; `api/` and `cli/` are both consumers of `blockchain/` and
+never communicate with each other directly; `config/` is the single source
+of runtime parameters read by every other package.
+
+## Technology Stack
+
+| Layer | Technology |
+|---|---|
+| Language | Python 3.13+ |
+| API Framework | FastAPI, Uvicorn |
+| Data Validation | Pydantic |
+| Persistence | SQLAlchemy Core, SQLite (PostgreSQL-compatible) |
+| CLI Framework | Typer, Rich |
+| Cryptography | `cryptography`, `ecdsa` (SECP256k1) |
+| Testing | pytest, FastAPI `TestClient` |
+| Configuration | Environment-variable-driven dataclasses |
+
 ## Installation
+
+SAYANJALI BLOCKCHAIN runs on Linux, Windows, macOS, and Android (via
+Termux) with no platform-specific code paths.
+
+### Prerequisites
+
+- Python 3.13 or later
+- `pip`
+- `git`
+
+### Linux / macOS
 
 ```bash
 git clone https://github.com/<your-username>/sayanjali-blockchain.git
 cd sayanjali-blockchain
-python -m venv venv
-source venv/bin/activate      # Windows: venv\Scripts\activate
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Building on Android/Termux? See [SETUP_TERMUX.md](SETUP_TERMUX.md) for the
-complete phone-only setup guide.
+### Windows
 
-## Termux Setup
+```powershell
+git clone https://github.com/<your-username>/sayanjali-blockchain.git
+cd sayanjali-blockchain
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+```
 
-The condensed version, for anyone building entirely on an Android phone:
+<details>
+<summary>Android (Termux)</summary>
 
 ```bash
 pkg update -y && pkg upgrade -y
@@ -154,32 +269,28 @@ python -m venv venv
 source venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
-
-python -m cli.main status
 ```
 
-If `cryptography` fails to build a wheel on your device, force a source
-build: `pip install cryptography --no-binary :all:`. Full troubleshooting,
-`termux-wake-lock` notes, and performance recommendations for low-end
-devices live in [SETUP_TERMUX.md](SETUP_TERMUX.md).
+If `cryptography` fails to build a wheel, force a source build:
+
+```bash
+pip install cryptography --no-binary :all:
+```
+
+</details>
 
 ## Quick Start
 
-A minimal end-to-end flow — create a wallet, mine a block, check the
-balance, validate the chain:
-
 ```bash
-source venv/bin/activate
+source venv/bin/activate   # Windows: venv\Scripts\activate
 
 python -m cli.main create-wallet
-# copy the printed Address
-
 python -m cli.main mine <address-from-above>
 python -m cli.main status
 python -m cli.main validate
 ```
 
-Or the same flow against a running API server:
+Equivalent flow through the REST API:
 
 ```bash
 python -m api.main &
@@ -191,67 +302,78 @@ curl -s -X POST http://127.0.0.1:8000/mine \
 curl -s http://127.0.0.1:8000/status
 ```
 
-## Usage
+## Running the Node
 
-### Start the node (REST API)
+The node process exposes chain state and mining functionality over HTTP.
 
 ```bash
 python -m api.main
-# or
+# or, equivalently:
 uvicorn api.main:app --host 0.0.0.0 --port 8000
 ```
 
-Interactive API docs: `http://127.0.0.1:8000/docs`
+Once running, interactive API documentation is available at:
 
-### Use the CLI
+- Swagger UI: `http://127.0.0.1:8000/docs`
+- ReDoc: `http://127.0.0.1:8000/redoc`
 
-```bash
-python -m cli.main create-wallet
-python -m cli.main mine <your-address>
-python -m cli.main show-chain
-python -m cli.main status
-python -m cli.main validate
-```
+The CLI can operate against the same underlying chain state independently
+of whether the API process is running, since both share the same storage
+layer.
 
-## API Reference
+## API Documentation
 
 | Method | Endpoint | Description |
 |---|---|---|
 | GET | `/health` | Liveness probe |
-| GET | `/status` | Node/chain status summary |
+| GET | `/status` | Node and chain status summary |
 | GET | `/chain` | Full blockchain |
-| GET | `/block/{index}` | Single block by index |
+| GET | `/block/{index}` | Retrieve a single block by index |
 | POST | `/wallet/create` | Generate a new wallet |
-| GET | `/wallet/{address}` | Confirmed balance for an address |
-| POST | `/transaction/create` | Build an unsigned transaction envelope |
+| GET | `/wallet/{address}` | Retrieve confirmed balance for an address |
+| POST | `/transaction/create` | Construct an unsigned transaction envelope |
 | POST | `/transaction/sign` | Sign a transaction with a private key |
 | POST | `/transaction/submit` | Submit a signed transaction to the mempool |
 | GET | `/transactions/pending` | List pending mempool transactions |
-| POST | `/mine` | Mine a new block, rewarding a miner address |
+| POST | `/mine` | Mine a new block and credit the reward to a miner address |
 
-Full request/response schemas are documented automatically at `/docs`
-(Swagger UI) and `/redoc`.
+Full request and response schemas are generated automatically and are
+available at `/docs` and `/redoc` on a running node.
 
-## CLI Reference
+## CLI Commands
 
 | Command | Description |
 |---|---|
-| `create-wallet` | Generate a new wallet and print its keys/address |
-| `show-chain` | Print a summary table of every block |
-| `mine <address>` | Mine a new block, rewarding `<address>` |
-| `status` | Print node/chain status |
-| `create-transaction` | Build, sign, and submit a transaction interactively |
-| `validate` | Validate the entire chain |
-| `start-node` | Start the FastAPI node via uvicorn |
+| `create-wallet` | Generate a new wallet and display its keys and address |
+| `show-chain` | Display a summary of every block in the chain |
+| `mine <address>` | Mine a new block, crediting the reward to `<address>` |
+| `status` | Display current node and chain status |
+| `create-transaction` | Construct, sign, and submit a transaction interactively |
+| `validate` | Validate the entire chain from genesis to tip |
+| `start-node` | Start the REST API node via Uvicorn |
 
-## Screenshots
+## Configuration
 
-*(Add CLI and Swagger UI screenshots here once available — placeholders
-below.)*
+All runtime parameters are centralized in `config/settings.py` and can be
+overridden via environment variables.
 
-- `docs/screenshots/cli-show-chain.png`
-- `docs/screenshots/api-swagger-docs.png`
-- `docs/screenshots/cli-mining.png`
+| Parameter | Environment Variable | Default | Description |
+|---|---|---|---|
+| Mining difficulty | `SYJ_DIFFICULTY` | `4` | Proof-of-Work difficulty target |
+| Target block time | `SYJ_TARGET_BLOCK_TIME` | `30` | Seconds, used for difficulty retargeting |
+| Difficulty adjustment interval | `SYJ_DIFFICULTY_ADJUSTMENT_INTERVAL` | `10` | Blocks between retarget evaluations |
+| Block reward | `SYJ_BLOCK_REWARD` | `50.0` | Coinbase reward per mined block |
+| Network name | `SYJ_NETWORK_NAME` | `sayanjali-mainnet-mvp` | Logical network identifier |
+| Host | `SYJ_HOST` | `0.0.0.0` | REST API bind address |
+| Port | `SYJ_PORT` | `8000` | REST API bind port |
+| Chain ID | `SYJ_CHAIN_ID` | `1` | Numeric network identifier |
+| Database file | `SYJ_DB_FILE` | `sayanjali_chain.db` | SQLite filename under `database/` |
+| Log level | `SYJ_LOG_LEVEL` | `INFO` | Logging verbosity |
+
+Genesis parameters (fixed timestamp, initial hash, and network message) are
+defined in `GenesisConfig` and are intentionally not environment-overridable,
+so that every unmodified clone of the repository produces an identical
+genesis block.
 
 ## Testing
 
@@ -259,80 +381,113 @@ below.)*
 pytest -v
 ```
 
-37 tests cover wallets, transactions, blocks, mining, chain validation, and
-the full REST API (via FastAPI's `TestClient`), all running against
-isolated temporary SQLite databases so your real chain in `database/` is
-never touched. See [TESTING.md](TESTING.md) for what each test file
-covers, coverage reporting, and the manual smoke-test checklist.
+The test suite contains 37 tests covering wallets, transactions, blocks,
+mining, consensus, chain validation, and the complete REST API surface via
+FastAPI's `TestClient`. Every test runs against an isolated, temporary
+SQLite database, so the test suite never modifies a developer's local chain
+state.
 
-## GitHub Workflow
-
-Branching (`main` / `dev` / `feature/*`), commit message conventions,
-release tagging, and Termux-specific push/pull/PAT authentication notes are
-all documented in [GITHUB_WORKFLOW.md](GITHUB_WORKFLOW.md).
-
-## Roadmap
-
-See [ROADMAP.md](ROADMAP.md) for the full 10-phase plan from this MVP
-through mainnet.
+```bash
+pip install pytest-cov
+pytest --cov=blockchain --cov=api --cov-report=term-missing
+```
 
 ## Security
 
-This is an MVP. Before treating any deployment as production-grade or
-holding real value, be aware of its current limitations:
+**Cryptography.** Wallets use ECDSA on the SECP256k1 curve, the same curve
+used by Bitcoin and Ethereum, via the `ecdsa` and `cryptography` libraries.
+Addresses are one-way SHA-256 derivations of the public key.
 
-- **No P2P networking yet (Phase 6).** Each node is authoritative over its
-  own local chain; there is no peer consensus, so this MVP should not be
-  run as a multi-party trust-minimized network yet. `Blockchain.replace_chain`
-  already implements the longest-valid-chain rule and is ready for a future
-  networking layer to call.
-- **Private keys pass through `/transaction/sign`.** This endpoint exists
-  for MVP/CLI convenience when the node and wallet are operated by the same
-  person on the same device (e.g. a single Termux instance). Do not expose
-  this endpoint on a shared or public-facing deployment; sign transactions
-  client-side instead once building a real wallet client.
-- **Difficulty retargeting is a simplified ±1 nudge**, not a full
-  ratio-based Bitcoin-style adjustment — adequate for MVP block-time
-  stability, not for adversarial hash-rate conditions (tracked in
-  [ROADMAP.md](ROADMAP.md) Phase 7).
-- **No rate limiting, authentication, or TLS** on the REST API by default.
-  CORS is wide open (`allow_origins=["*"]`) for local development
-  convenience — tighten this in `api/main.py` before any non-local
-  deployment.
-- **Cryptography:** wallets use ECDSA on SECP256k1 (the same curve used by
-  Bitcoin and Ethereum) via the well-audited `ecdsa` and `cryptography`
-  Python libraries. Addresses are one-way SHA-256 derivations of the public
-  key and cannot be reversed to recover it.
-- **Responsible disclosure:** if you find a vulnerability in this MVP,
-  please report it privately rather than opening a public issue, given the
-  project's early stage and real-token ambitions.
+**Hashing.** Block and transaction integrity is enforced with SHA-256.
+Block headers include the Merkle root of all included transactions, and a
+block's difficulty is itself part of the hashed header, preventing
+independent tampering with either field.
 
-## Contribution Guide
+**Digital signatures.** Every non-coinbase transaction must be signed by
+the sender's private key and is independently verified against the
+sender's public key before acceptance into the mempool or a block.
 
-This is currently a solo-developer project under SAYANJALI NEXUS PRIVATE
-LIMITED. If external contributions open up in the future:
+**Validation.** Every block is validated against its predecessor
+(sequential index, correct previous-hash linkage, monotonic timestamp,
+proof-of-work satisfaction) before being appended to the chain, and the
+entire chain can be re-validated from genesis at any time via `validate`.
 
-1. Fork the repository.
-2. Create a feature branch (`feature/<short-name>`).
-3. Ensure `pytest` passes locally (`pytest -v`) before opening a PR.
-4. Follow the existing code style: type hints everywhere, PEP 8, complete
-   docstrings on public classes/functions.
-5. Keep PRs scoped to one logical change.
+**Known limitations in the current release:**
 
-See [GITHUB_WORKFLOW.md](GITHUB_WORKFLOW.md) for the full Git workflow used
-on this project, including Termux-specific push/pull/auth notes.
+- No peer-to-peer networking; each node is authoritative over its own
+  local chain state.
+- The `/transaction/sign` endpoint accepts a private key over HTTP and is
+  intended for single-operator development use only. It must not be
+  exposed on a shared or public-facing deployment.
+- Difficulty retargeting uses a conservative, bounded adjustment rather
+  than a full ratio-based algorithm.
+- The REST API has no built-in authentication, rate limiting, or TLS
+  termination, and CORS is permissive by default.
+
+**Future security roadmap** includes peer authentication for networking,
+client-side transaction signing (removing private key transmission
+entirely), a full difficulty retargeting algorithm, and a formal security
+audit ahead of any mainnet deployment.
+
+Vulnerabilities should be reported privately rather than through public
+issues, given the project's early stage.
+
+## Roadmap
+
+| Phase | Scope | Status |
+|---|---|---|
+| 1 | Blockchain core: blocks, hashing, genesis | Complete |
+| 2 | Wallet system | Complete |
+| 3 | Transaction engine | Complete |
+| 4 | Proof-of-Work consensus and mining | Complete |
+| 5 | REST API, CLI, persistent storage | Complete |
+| 6 | Peer-to-peer networking and multi-node synchronization | Planned |
+| 7 | Full difficulty retargeting; Proof-of-Stake groundwork | Planned |
+| 8 | Block explorer | Planned |
+| 9 | Smart contract execution environment | Planned |
+| 10 | Governance mechanisms and SDK | Planned |
+| 11 | Mainnet architecture and SYJ Token launch | Planned |
+
+The current architecture — pluggable consensus, an abstracted storage
+layer, and a versioned API — is designed so that phases 6 through 11 are
+additive extensions rather than rewrites of the existing codebase.
+
+## Contributing
+
+Contributions are welcome. To propose a change:
+
+1. Fork the repository and create a feature branch.
+2. Ensure the full test suite passes locally: `pytest -v`.
+3. Follow the existing code conventions: complete type hints, PEP 8
+   formatting, and docstrings on all public classes and functions.
+4. Keep pull requests scoped to a single logical change.
+5. Open a pull request with a clear description of the change and its
+   motivation.
+
+Code review focuses on correctness, test coverage, and consistency with
+the architectural principles described above.
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Note: the license covers source code only,
-not the SAYANJALI / SYJ Token / SAYANJALI NEXUS names or trademarks.
+Released under the [MIT License](LICENSE). The license applies to the
+source code in this repository only and does not grant rights to the
+SAYANJALI, SYJ Token, or SAYANJALI NEXUS names, logos, or trademarks.
 
-## Future Vision
+## Disclaimer
 
-SAYANJALI BLOCKCHAIN's MVP is deliberately scoped to a clean, testable core
-so that later phases (P2P networking, smart contracts, staking, bridges,
-mobile/web wallets, an explorer, and eventually mainnet) can be built as
-additive modules rather than rewrites. Every architectural decision in this
-MVP — the pluggable consensus interface, the storage abstraction, the
-per-block difficulty recording, the API/CLI sharing one core — was made
-with that expansion path in mind.
+This release is a Minimum Viable Product intended for research,
+experimentation, and educational purposes. It has not undergone a formal
+security audit and is **not** production-ready. It should not be used to
+custody, transfer, or represent real economic value in its current form.
+
+## Project Vision & Architecture
+
+SAYANJALI BLOCKCHAIN was conceived and architected by **Syed Ali Hasan
+Moosavi**, Founder & Managing Director of **SAYANJALI NEXUS PRIVATE
+LIMITED**. The project vision, system architecture, blockchain design, and
+technical direction originate from his work. The implementation of this
+MVP was developed under his architectural leadership using AI-assisted
+software engineering.
+
+**Lead Architect & Project Vision**
+Syed Ali Hasan Moosavi
