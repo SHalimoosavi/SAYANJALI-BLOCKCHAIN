@@ -1,7 +1,7 @@
 ![Python](https://img.shields.io/badge/python-3.13%2B-blue)
 ![FastAPI](https://img.shields.io/badge/framework-FastAPI-009688)
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Tests](https://img.shields.io/badge/tests-92%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-96%20passing-brightgreen)
 ![Version](https://img.shields.io/badge/version-v0.2.0--mvp-orange)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS%20%7C%20Android-lightgrey)
 ![GitHub Stars](https://img.shields.io/github/stars/sayanjali-nexus/sayanjali-blockchain?style=social)
