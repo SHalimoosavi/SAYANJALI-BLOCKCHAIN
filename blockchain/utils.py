@@ -16,6 +16,7 @@ import logging
 import logging.handlers
 import sys
 import time
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -142,3 +143,34 @@ class StorageError(SayanjaliError):
 
 class WalletError(SayanjaliError):
     """Raised for wallet creation, import, or signing failures."""
+
+
+class NetworkError(SayanjaliError):
+    """Raised for peer communication, registration, or sync failures."""
+
+
+class BoundedSet:
+    """
+    A fixed-capacity set with FIFO eviction, used to remember recently
+    seen block/transaction hashes for propagation loop prevention without
+    growing memory unboundedly as a node stays online.
+    """
+
+    def __init__(self, max_size: int = 5000) -> None:
+        self._max_size = max_size
+        self._order: "OrderedDict[str, None]" = OrderedDict()
+
+    def add(self, item: str) -> None:
+        """Record `item` as seen, evicting the oldest entry if at capacity."""
+        if item in self._order:
+            self._order.move_to_end(item)
+            return
+        self._order[item] = None
+        if len(self._order) > self._max_size:
+            self._order.popitem(last=False)
+
+    def __contains__(self, item: str) -> bool:
+        return item in self._order
+
+    def __len__(self) -> int:
+        return len(self._order)

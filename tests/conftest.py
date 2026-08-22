@@ -19,16 +19,22 @@ def isolated_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """
     Point every test at an isolated, temporary SQLite database and clear
     the cached Settings singleton before and after each test so tests
-    never leak configuration or data between one another.
+    never leak configuration or data between one another. The isolated
+    database file itself is deleted on teardown so repeated test runs
+    don't accumulate stray files under database/.
     """
     from config import settings as settings_module
 
-    monkeypatch.setenv("SYJ_DB_FILE", f"test_{os.urandom(4).hex()}.db")
+    db_filename = f"test_{os.urandom(4).hex()}.db"
+    monkeypatch.setenv("SYJ_DB_FILE", db_filename)
     monkeypatch.setenv("SYJ_DIFFICULTY", "2")  # keep PoW fast in tests
 
     settings_module.get_settings.cache_clear()
     yield
     settings_module.get_settings.cache_clear()
+
+    db_path = Path(__file__).resolve().parent.parent / "database" / db_filename
+    db_path.unlink(missing_ok=True)
 
 
 @pytest.fixture

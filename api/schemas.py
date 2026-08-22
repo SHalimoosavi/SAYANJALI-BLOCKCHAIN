@@ -33,6 +33,7 @@ class BlockOut(BaseModel):
     previous_hash: str
     timestamp: float
     nonce: int
+    difficulty: int
     merkle_root: str
     hash: str
     transactions: list[TransactionOut]
@@ -142,3 +143,115 @@ class ErrorResponse(BaseModel):
     """Standard error envelope."""
 
     detail: str
+
+
+# --------------------------------------------------------------------- #
+# Phase 2: P2P networking schemas
+# --------------------------------------------------------------------- #
+
+
+class PeerOut(BaseModel):
+    """A single known peer, as returned by the API."""
+
+    address: str
+    node_id: Optional[str] = None
+    status: str
+    last_seen: Optional[float] = None
+    registered_at: Optional[float] = None
+
+
+class NetworkStatusResponse(BaseModel):
+    """This node's networking status summary."""
+
+    node_id: str
+    self_address: str
+    peer_count: int
+    chain_length: int
+    chain_work: int
+    network_name: str
+
+
+class PeerListResponse(BaseModel):
+    """List of every peer this node currently knows about."""
+
+    count: int
+    peers: list[PeerOut]
+
+
+class PeerRegisterRequest(BaseModel):
+    """Payload a peer sends to announce itself to this node."""
+
+    node_id: str
+    address: str
+
+
+class PeerRegisterResponse(BaseModel):
+    """
+    Response to a peer registration request.
+
+    Doubles as a light peer-discovery mechanism: alongside confirming
+    whether the registration was accepted, this node also returns its own
+    identity and known peer addresses, so the registering peer can learn
+    about the wider network from a single request.
+    """
+
+    accepted: bool
+    reason: Optional[str] = None
+    self_node_id: str
+    self_address: str
+    known_peers: list[str]
+
+
+class NetworkChainResponse(BaseModel):
+    """
+    Full chain response used for peer-to-peer synchronization.
+
+    Deliberately separate from `ChainOut` (the human-facing `/chain`
+    endpoint): this response is what `sync.py` parses back into `Block`
+    objects, so its `chain` field is a list of raw block dicts (via
+    `Block.to_dict()`) rather than the `BlockOut` schema, guaranteeing
+    every field consensus validation needs -- including `difficulty` --
+    round-trips exactly.
+    """
+
+    length: int
+    work: int
+    chain: list[dict]
+
+
+class BlockReceiveRequest(BaseModel):
+    """Payload for a peer propagating a mined block to this node."""
+
+    block: dict
+    from_peer: Optional[str] = None
+
+
+class TransactionReceiveRequest(BaseModel):
+    """Payload for a peer propagating a mempool transaction to this node."""
+
+    transaction: dict
+    from_peer: Optional[str] = None
+
+
+class ReceiveResponse(BaseModel):
+    """Response to a block or transaction propagation request."""
+
+    accepted: bool
+    reason: Optional[str] = None
+    rebroadcast_to: int = 0
+
+
+class SyncResultOut(BaseModel):
+    """Outcome of a sync attempt against a single peer."""
+
+    peer_address: str
+    accepted: bool
+    reason: str
+    local_length_before: int
+    local_length_after: int
+
+
+class SyncResponse(BaseModel):
+    """Response after attempting synchronization with known peers."""
+
+    results: list[SyncResultOut]

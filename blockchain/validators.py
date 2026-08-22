@@ -34,6 +34,52 @@ def validate_transaction(transaction: Transaction) -> tuple[bool, str]:
     return True, ""
 
 
+def chain_work(chain: list[Block]) -> int:
+    """
+    Compute the accumulated proof-of-work of a chain.
+
+    This blockchain's difficulty target is defined in
+    `ProofOfWorkConsensus.mine`/`validate` as a count of required leading
+    *hexadecimal* zero characters (`target_prefix = "0" * difficulty`, an
+    ASCII hex-digest prefix check). A SHA-256 hex digest has 16 equally
+    likely values per character, so each additional difficulty level
+    narrows the valid-hash space by a factor of 16, not 2: the probability
+    of a given nonce producing a valid hash is ~1/16**difficulty, and the
+    expected work to find one scales the same way. Each block therefore
+    contributes 16**difficulty "work units" to the chain's accumulated
+    work -- not 2**difficulty, which would understate the true cost by a
+    large and rapidly widening margin as difficulty increases (e.g. at
+    difficulty 4 alone, 2**4=16 versus the correct 16**4=65536).
+
+    This is the correct criterion for comparing two competing PoW chains:
+    a shorter chain mined at higher difficulty can represent more real
+    work than a longer chain mined at lower difficulty, so length alone is
+    not a reliable signal once difficulty can vary.
+    """
+    return sum(16 ** max(block.difficulty, 0) for block in chain)
+
+
+def validate_genesis_identity(
+    candidate_chain: list[Block], local_genesis: Block
+) -> tuple[bool, str]:
+    """
+    Confirm a candidate chain shares this network's genesis block.
+
+    A chain that is structurally valid on its own terms could still
+    belong to an entirely different network (a different genesis
+    timestamp, message, or difficulty produces a different genesis hash).
+    Without this check, a peer -- malicious or simply misconfigured --
+    could hand a node a foreign chain that would otherwise pass
+    `validate_chain` outright. This must be checked before any work or
+    length comparison is meaningful.
+    """
+    if not candidate_chain:
+        return False, "Candidate chain is empty."
+    if candidate_chain[0].hash != local_genesis.hash:
+        return False, "Candidate chain's genesis block does not match this network."
+    return True, ""
+
+
 def validate_block_structure(block: Block) -> tuple[bool, str]:
     """Validate a block's internal structure, independent of chain context."""
     if block.index < 0:

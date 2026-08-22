@@ -20,8 +20,10 @@ from blockchain.storage import Storage
 from blockchain.transaction import Transaction
 from blockchain.utils import ValidationError, get_logger
 from blockchain.validators import (
+    chain_work,
     validate_block_against_chain,
     validate_chain,
+    validate_genesis_identity,
     validate_transaction,
 )
 from config.settings import Settings, get_settings
@@ -79,6 +81,15 @@ class Blockchain:
     def length(self) -> int:
         """Return the number of blocks in the chain, including genesis."""
         return len(self.chain)
+
+    @property
+    def genesis_block(self) -> Block:
+        """Return this node's genesis block."""
+        return self.chain[0]
+
+    def total_work(self) -> int:
+        """Return the accumulated proof-of-work of the local chain."""
+        return chain_work(self.chain)
 
     def get_block(self, index: int) -> Optional[Block]:
         """Return the block at `index`, or None if out of range."""
@@ -191,27 +202,75 @@ class Blockchain:
 
     def replace_chain(self, candidate_chain: list[Block]) -> tuple[bool, str]:
         """
-        Replace the current chain with `candidate_chain` if it is both
-        valid and longer (the standard longest-valid-chain rule).
+        Adopt `candidate_chain` in place of the local chain if it is valid,
+        belongs to this network, and represents strictly more accumulated
+        proof-of-work than the local chain.
 
-        This is the hook future P2P networking code will call when it
-        receives a competing chain from a peer.
+        Accumulated work -- not raw block count -- is the correct
+        criterion for a PoW chain: a shorter chain mined at higher
+        difficulty can represent more real computational effort than a
+        longer one mined at lower difficulty. Using length alone would let
+        a chain of many trivially-easy blocks outrank a chain that was
+        genuinely harder to produce.
+
+        This is the hook Phase 2's P2P synchronization calls when it
+        receives a competing chain from a peer. It safely handles both the
+        simple case (candidate extends the local tip) and a true reorg
+        (candidate diverges below the local tip), persisting the result
+        atomically via `Storage.reorganize_from`.
         """
-        if len(candidate_chain) <= len(self.chain):
-            return False, "Candidate chain is not longer than current chain."
+        genesis_ok, reason = validate_genesis_identity(candidate_chain, self.genesis_block)
+        if not genesis_ok:
+            return False, reason
+
+        candidate_work = chain_work(candidate_chain)
+        local_work = self.total_work()
+        if candidate_work <= local_work:
+            return False, (
+                f"Candidate chain work ({candidate_work}) does not exceed "
+                f"local chain work ({local_work})."
+            )
 
         is_valid, reason = validate_chain(candidate_chain, 1, self.consensus)
         if not is_valid:
             return False, f"Candidate chain invalid: {reason}"
 
-        for block in candidate_chain:
-            if self.storage.get_block(block.index) is None:
-                self.storage.save_block(block)
-                self.storage.update_balances_for_block(block)
+        fork_index = self._find_fork_index(candidate_chain)
+        new_blocks = candidate_chain[fork_index:]
 
+        self.storage.reorganize_from(fork_index, new_blocks)
         self.chain = candidate_chain
-        logger.info("Chain replaced with longer valid candidate (length=%s)", len(candidate_chain))
+
+        # Any transaction now confirmed on the adopted chain should no
+        # longer sit in the local mempool as pending.
+        confirmed_hashes = [
+            tx.tx_hash for block in new_blocks for tx in block.transactions
+        ]
+        self.mempool.remove_transactions(confirmed_hashes)
+
+        logger.info(
+            "Chain replaced: fork_index=%s, new_length=%s, local_work=%s -> %s",
+            fork_index,
+            len(candidate_chain),
+            local_work,
+            candidate_work,
+        )
         return True, ""
+
+    def _find_fork_index(self, candidate_chain: list[Block]) -> int:
+        """
+        Return the first index at which `candidate_chain` diverges from
+        the local chain (i.e. the first index that must be rewritten).
+
+        If the candidate simply extends the local chain with no shared
+        divergence, this returns `len(self.chain)` -- nothing already
+        persisted needs to change, only new blocks are appended.
+        """
+        shared_length = min(len(self.chain), len(candidate_chain))
+        for i in range(shared_length):
+            if self.chain[i].hash != candidate_chain[i].hash:
+                return i
+        return shared_length
 
     def status(self) -> dict:
         """Return a summary dict describing current node/chain status."""

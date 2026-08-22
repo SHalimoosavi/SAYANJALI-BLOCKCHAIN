@@ -63,6 +63,7 @@ def _block_to_out(block) -> BlockOut:
         previous_hash=block.previous_hash,
         timestamp=block.timestamp,
         nonce=block.nonce,
+        difficulty=block.difficulty,
         merkle_root=block.merkle_root,
         hash=block.hash,
         transactions=[
@@ -203,6 +204,21 @@ def submit_transaction(payload: TransactionSubmitRequest) -> TransactionSubmitRe
     )
     chain = get_blockchain()
     accepted, reason = chain.submit_transaction(tx)
+
+    if accepted:
+        # Phase 2 hook: propagate newly accepted transactions to known
+        # peers. Imported lazily to avoid a circular import, since
+        # api.network_routes imports get_blockchain from this module.
+        # A broadcast failure never affects whether the transaction was
+        # accepted locally -- it is best-effort only.
+        try:
+            from api.network_routes import get_network_node
+            from blockchain.network.propagation import broadcast_transaction
+
+            broadcast_transaction(get_network_node(), tx)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Transaction broadcast failed: %s", exc)
+
     return TransactionSubmitResponse(
         accepted=accepted,
         tx_hash=tx.tx_hash if accepted else None,
@@ -230,5 +246,15 @@ def mine(payload: MineRequest) -> MineResponse:
         block = chain.mine_pending_transactions(payload.miner_address)
     except ValidationError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    # Phase 2 hook: propagate the newly mined block to known peers.
+    # Best-effort -- a broadcast failure never undoes local mining.
+    try:
+        from api.network_routes import get_network_node
+        from blockchain.network.propagation import broadcast_block
+
+        broadcast_block(get_network_node(), block)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Block broadcast failed: %s", exc)
 
     return MineResponse(block=_block_to_out(block))

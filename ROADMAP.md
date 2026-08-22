@@ -23,12 +23,33 @@ a production-grade Layer-1 network powering the SYJ Token ecosystem.
 - Full FastAPI surface, Typer CLI, persistent SQLite storage
 - Deliverable: `api/`, `cli/`, `blockchain/storage.py`
 
-## Phase 6 — Networking (P2P)
-- Peer discovery and gossip protocol for transactions and blocks
-- Longest-valid-chain conflict resolution across peers (the `replace_chain`
-  hook already exists in `blockchain/blockchain.py` for this)
-- Node handshake / version negotiation
-- Milestone: two independent nodes stay in sync over a LAN
+## Phase 6 — Networking (P2P) ✅ (complete)
+- HTTP-based peer registration and discovery, served under `/network/*`
+  on the same FastAPI application as the REST API
+- Node identity persisted across restarts (`blockchain/network/node.py`)
+- Chain synchronization: fetch, validate, and adopt a peer's chain using
+  **accumulated proof-of-work** (not raw length) as the adoption
+  criterion, with reorg-safe persistence (`Blockchain.replace_chain`,
+  `Storage.reorganize_from`)
+- Block and transaction propagation with duplicate/invalid rejection and
+  basic loop prevention
+- Network-aware CLI commands: `network-status`, `peers`, `add-peer`, `sync`
+- Milestone achieved: two independent node processes, started and
+  connected over real HTTP, converge on the same chain in both directions
+  (see `tests/test_multi_node_integration.py`)
+
+## Phase 6.5 — Networking Hardening (deferred from Phase 6)
+Phase 6 delivered a working HTTP-based P2P prototype, not a production
+peer-to-peer protocol. Explicitly deferred:
+- A real gossip/anti-entropy protocol (Phase 6 uses direct request/response
+  propagation to known peers with a bounded seen-hash cache, not multi-hop
+  gossip)
+- Node handshake / version / protocol negotiation
+- Peer authentication (any node can currently register as a peer)
+- Client-side transaction signing (removing private-key transmission to
+  `/transaction/sign` entirely)
+- A rate limiter shared across a deployment, rather than per-process
+  in-memory only
 
 ## Phase 7 — Consensus Improvements
 - Full Bitcoin-style difficulty retarget (ratio-based, not the current
@@ -69,10 +90,20 @@ into a specific phase yet:
 - NFT / token standards
 - DAO governance tooling
 
-## How phases map to this MVP delivery
+## How phases map to this repository's history
 
-Phases 1–5 are the complete, tested MVP delivered in this repository (37
-passing tests across wallets, transactions, blocks, mining, chain
-validation, and the full REST API). Phases 6–10 are architected for but
-intentionally not implemented yet, per the project's scope: build a clean,
-modular MVP now; expand into a real network later without a rewrite.
+Phases 1–5 shipped as v0.1.0-mvp: a single-node blockchain (37 passing
+tests across wallets, transactions, blocks, mining, chain validation, and
+the REST API). Phase 6 shipped next: HTTP-based P2P networking and
+multi-node synchronization, bringing the suite to 92 passing tests,
+including a real two-process integration test proving independent nodes
+converge on the same chain over actual HTTP. Phases 6.5–10 remain
+architected for but not yet implemented, per the project's scope: build
+each layer as an additive module on a clean core, not a rewrite.
+
+**A note on terminology:** Phase 6 makes this a networked, multi-node
+*prototype* -- nodes communicate, propagate, and converge. It is not
+distributed consensus in the Byzantine-fault-tolerant sense, and it is not
+a production peer-to-peer network. See ROADMAP.md's Phase 6.5 and the
+README's Security section for exactly what that distinction means in
+practice.

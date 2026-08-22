@@ -11,6 +11,10 @@ Commands:
     status               Print node/chain status.
     create-transaction   Build, sign, and submit a transaction end-to-end.
     validate             Validate the full chain and print the result.
+    network-status       Print this node's P2P identity and status.
+    peers                List known peers.
+    add-peer             Register a peer (bidirectional, best-effort).
+    sync                 Synchronize the chain from known peers.
     start-node           Start the FastAPI node (equivalent to uvicorn).
 """
 
@@ -36,6 +40,23 @@ console = Console()
 def _get_chain() -> Blockchain:
     """Construct a Blockchain instance bound to the on-disk database."""
     return Blockchain()
+
+
+def _get_network_node(chain: Blockchain | None = None):
+    """
+    Construct a NetworkNode, optionally bound to an already-constructed
+    Blockchain instance (to avoid opening a second, redundant connection
+    to the same database within a single command).
+
+    Unlike the API's module-level singleton (which persists for the
+    life of a running server process), each CLI invocation is its own
+    short-lived process -- so node identity and peer state are recovered
+    from the database (see NetworkNode/PeerRegistry persistence) rather
+    than kept in memory across commands.
+    """
+    from blockchain.network.node import NetworkNode
+
+    return NetworkNode(chain or _get_chain())
 
 
 @app.command("create-wallet")
@@ -98,6 +119,16 @@ def mine(
     console.print(f"Nonce: {block.nonce}")
     console.print(f"Transactions included: {len(block.transactions)}")
 
+    try:
+        from blockchain.network.propagation import broadcast_block
+
+        node = _get_network_node(chain)
+        acknowledged = broadcast_block(node, block)
+        if acknowledged:
+            console.print(f"Broadcast to {len(acknowledged)} peer(s).")
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[yellow]Block broadcast skipped:[/yellow] {exc}")
+
 
 @app.command("status")
 def status() -> None:
@@ -133,6 +164,16 @@ def create_transaction(
     if accepted:
         console.print("[bold green]Transaction accepted into mempool[/bold green]")
         console.print(f"tx_hash: {tx.tx_hash}")
+
+        try:
+            from blockchain.network.propagation import broadcast_transaction
+
+            node = _get_network_node(chain)
+            acknowledged = broadcast_transaction(node, tx)
+            if acknowledged:
+                console.print(f"Broadcast to {len(acknowledged)} peer(s).")
+        except Exception as exc:  # noqa: BLE001
+            console.print(f"[yellow]Transaction broadcast skipped:[/yellow] {exc}")
     else:
         console.print(f"[bold red]Transaction rejected:[/bold red] {reason}")
         raise typer.Exit(code=1)
@@ -148,6 +189,109 @@ def validate() -> None:
     else:
         console.print(f"[bold red]Chain is INVALID:[/bold red] {reason}")
         raise typer.Exit(code=1)
+
+
+@app.command("network-status")
+def network_status() -> None:
+    """Print this node's networking identity and summary status."""
+    node = _get_network_node()
+    for key, value in node.status().items():
+        console.print(f"[bold]{key}[/bold]: {value}")
+
+
+@app.command("peers")
+def peers() -> None:
+    """List every peer this node currently knows about."""
+    node = _get_network_node()
+    known = node.peers.list_peers()
+
+    table = Table(title="Known Peers")
+    table.add_column("Address")
+    table.add_column("Node ID")
+    table.add_column("Status")
+    table.add_column("Last Seen", justify="right")
+
+    for peer in known:
+        table.add_row(
+            peer.address,
+            (peer.node_id or "-")[:12],
+            peer.status,
+            f"{peer.last_seen:.0f}" if peer.last_seen else "-",
+        )
+    console.print(table)
+    console.print(f"Total peers: [bold]{len(known)}[/bold]")
+
+
+@app.command("add-peer")
+def add_peer(
+    address: str = typer.Argument(..., help="Peer address, e.g. http://127.0.0.1:8001")
+) -> None:
+    """
+    Register a peer and attempt bidirectional registration with it.
+
+    Adds the peer to this node's local registry, then -- best-effort --
+    announces this node to the peer in return, so both sides learn about
+    each other from a single command.
+    """
+    node = _get_network_node()
+    accepted, reason = node.peers.register(address)
+    if not accepted:
+        console.print(f"[bold red]Could not add peer:[/bold red] {reason}")
+        raise typer.Exit(code=1)
+
+    console.print(f"[bold green]Peer added:[/bold green] {address}")
+
+    result = node.client.register_with(address, node.node_id, node.self_address)
+    if result is not None:
+        node.peers.mark_seen(address, "online", result.get("self_node_id"))
+        console.print("Peer acknowledged registration (bidirectional link established).")
+        remote_peers = result.get("known_peers", [])
+        new_peers = [p for p in remote_peers if p != node.self_address]
+        if new_peers:
+            console.print(f"Peer knows about {len(new_peers)} additional address(es).")
+    else:
+        node.peers.mark_seen(address, "offline")
+        console.print(
+            "[yellow]Peer did not respond to registration; added locally as offline.[/yellow]"
+        )
+
+
+@app.command("sync")
+def sync_command(
+    peer: str = typer.Option(
+        None, help="Sync from a specific peer only. Defaults to all known peers."
+    )
+) -> None:
+    """Synchronize this node's chain from known peers."""
+    from blockchain.network import sync as sync_module
+
+    node = _get_network_node()
+    with console.status("[bold green]Synchronizing..."):
+        if peer:
+            results = [sync_module.sync_with_peer(node, peer)]
+        else:
+            results = sync_module.sync_with_all_peers(node)
+
+    if not results:
+        console.print("[yellow]No known peers to sync with.[/yellow]")
+        return
+
+    table = Table(title="Sync Results")
+    table.add_column("Peer")
+    table.add_column("Accepted")
+    table.add_column("Reason")
+    table.add_column("Length Before", justify="right")
+    table.add_column("Length After", justify="right")
+
+    for result in results:
+        table.add_row(
+            result.peer_address,
+            "[green]yes[/green]" if result.accepted else "[red]no[/red]",
+            result.reason or "-",
+            str(result.local_length_before),
+            str(result.local_length_after),
+        )
+    console.print(table)
 
 
 @app.command("start-node")

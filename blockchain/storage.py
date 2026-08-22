@@ -17,6 +17,8 @@ Three tables are maintained:
 from __future__ import annotations
 
 import json
+import time
+import uuid
 from typing import Optional
 
 from sqlalchemy import (
@@ -71,6 +73,24 @@ wallets_table = Table(
     metadata,
     Column("address", String(64), primary_key=True),
     Column("balance", Float, nullable=False, default=0.0),
+)
+
+peers_table = Table(
+    "peers",
+    metadata,
+    Column("address", String(256), primary_key=True),
+    Column("node_id", String(64), nullable=True),
+    Column("status", String(16), nullable=False, default="unknown"),
+    Column("last_seen", Float, nullable=True),
+    Column("registered_at", Float, nullable=False),
+)
+
+node_identity_table = Table(
+    "node_identity",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("node_id", String(64), nullable=False),
+    Column("created_at", Float, nullable=False),
 )
 
 
@@ -225,22 +245,28 @@ class Storage:
     def apply_balance_delta(self, address: str, delta: float) -> None:
         """Atomically adjust an address's cached balance by `delta`."""
         with self.engine.begin() as conn:
-            row = conn.execute(
-                select(wallets_table.c.balance).where(
-                    wallets_table.c.address == address
-                )
-            ).fetchone()
-            if row is None:
-                conn.execute(
-                    wallets_table.insert().values(address=address, balance=delta)
-                )
-            else:
-                new_balance = float(row[0]) + delta
-                conn.execute(
-                    wallets_table.update()
-                    .where(wallets_table.c.address == address)
-                    .values(balance=new_balance)
-                )
+            self._apply_balance_delta_conn(conn, address, delta)
+
+    @staticmethod
+    def _apply_balance_delta_conn(conn, address: str, delta: float) -> None:
+        """
+        Adjust an address's cached balance by `delta` using an already-open
+        connection/transaction. Factored out of `apply_balance_delta` so
+        `reorganize_from` can apply many deltas atomically within one
+        transaction instead of one commit per address.
+        """
+        row = conn.execute(
+            select(wallets_table.c.balance).where(wallets_table.c.address == address)
+        ).fetchone()
+        if row is None:
+            conn.execute(wallets_table.insert().values(address=address, balance=delta))
+        else:
+            new_balance = float(row[0]) + delta
+            conn.execute(
+                wallets_table.update()
+                .where(wallets_table.c.address == address)
+                .values(balance=new_balance)
+            )
 
     def update_balances_for_block(self, block: Block) -> None:
         """Apply every transaction in `block` to the wallet balance cache."""
@@ -248,3 +274,165 @@ class Storage:
             if not tx.is_coinbase():
                 self.apply_balance_delta(tx.sender, -tx.amount)
             self.apply_balance_delta(tx.receiver, tx.amount)
+
+    def reorganize_from(self, fork_index: int, new_blocks: list[Block]) -> None:
+        """
+        Replace every block from `fork_index` onward with `new_blocks`,
+        atomically, including reversing and reapplying wallet balances.
+
+        Used when adopting a competing chain that diverges below the
+        current tip (a reorg), rather than one that simply extends it.
+        Blocks below `fork_index` are left untouched. All of this happens
+        in a single transaction so a crash mid-reorg cannot leave the
+        database in a state with neither chain fully persisted.
+        """
+        try:
+            with self.engine.begin() as conn:
+                removed_rows = conn.execute(
+                    select(blocks_table)
+                    .where(blocks_table.c.index >= fork_index)
+                    .order_by(blocks_table.c.index.desc())
+                ).fetchall()
+
+                # Reverse balance effects of the blocks being discarded,
+                # most recent first, mirroring how they were applied.
+                for row in removed_rows:
+                    data = row._mapping
+                    for tx_dict in json.loads(data["transactions_json"]):
+                        tx = Transaction.from_dict(tx_dict)
+                        if not tx.is_coinbase():
+                            self._apply_balance_delta_conn(conn, tx.sender, tx.amount)
+                        self._apply_balance_delta_conn(conn, tx.receiver, -tx.amount)
+
+                conn.execute(
+                    transactions_table.delete().where(
+                        transactions_table.c.block_index >= fork_index
+                    )
+                )
+                conn.execute(
+                    blocks_table.delete().where(blocks_table.c.index >= fork_index)
+                )
+
+                for block in new_blocks:
+                    conn.execute(
+                        blocks_table.insert().values(
+                            **{
+                                "index": block.index,
+                                "previous_hash": block.previous_hash,
+                                "hash": block.hash,
+                                "timestamp": block.timestamp,
+                                "nonce": block.nonce,
+                                "difficulty": block.difficulty,
+                                "merkle_root": block.merkle_root,
+                                "transactions_json": json.dumps(
+                                    [tx.to_dict() for tx in block.transactions]
+                                ),
+                            }
+                        )
+                    )
+                    for tx in block.transactions:
+                        conn.execute(
+                            transactions_table.insert().values(
+                                tx_hash=tx.tx_hash,
+                                block_index=block.index,
+                                sender=tx.sender,
+                                receiver=tx.receiver,
+                                amount=tx.amount,
+                                timestamp=tx.timestamp,
+                                sender_public_key=tx.sender_public_key,
+                                signature=tx.signature,
+                            )
+                        )
+                        if not tx.is_coinbase():
+                            self._apply_balance_delta_conn(conn, tx.sender, -tx.amount)
+                        self._apply_balance_delta_conn(conn, tx.receiver, tx.amount)
+        except Exception as exc:  # noqa: BLE001
+            raise StorageError(f"Failed to reorganize chain from index {fork_index}: {exc}") from exc
+
+    # ------------------------------------------------------------------ #
+    # Node identity
+    # ------------------------------------------------------------------ #
+
+    def get_or_create_node_id(self) -> str:
+        """
+        Return this node's persistent identity, generating and storing a
+        new one on first use so the node presents a stable identity to
+        peers across restarts.
+        """
+        with self.engine.begin() as conn:
+            row = conn.execute(select(node_identity_table)).fetchone()
+            if row is not None:
+                return row._mapping["node_id"]
+
+            new_id = uuid.uuid4().hex
+            conn.execute(
+                node_identity_table.insert().values(
+                    node_id=new_id, created_at=time.time()
+                )
+            )
+            return new_id
+
+    # ------------------------------------------------------------------ #
+    # Peer registry
+    # ------------------------------------------------------------------ #
+
+    def upsert_peer(
+        self,
+        address: str,
+        node_id: Optional[str] = None,
+        status: str = "unknown",
+        last_seen: Optional[float] = None,
+    ) -> None:
+        """Insert a new peer or update an existing one's known fields."""
+        with self.engine.begin() as conn:
+            row = conn.execute(
+                select(peers_table).where(peers_table.c.address == address)
+            ).fetchone()
+            if row is None:
+                conn.execute(
+                    peers_table.insert().values(
+                        address=address,
+                        node_id=node_id,
+                        status=status,
+                        last_seen=last_seen,
+                        registered_at=time.time(),
+                    )
+                )
+            else:
+                update_values: dict = {"status": status}
+                if node_id is not None:
+                    update_values["node_id"] = node_id
+                if last_seen is not None:
+                    update_values["last_seen"] = last_seen
+                conn.execute(
+                    peers_table.update()
+                    .where(peers_table.c.address == address)
+                    .values(**update_values)
+                )
+
+    def list_peers(self) -> list[dict]:
+        """Return every known peer as a plain dict, most recently seen first."""
+        with self.engine.connect() as conn:
+            rows = conn.execute(
+                select(peers_table).order_by(peers_table.c.registered_at.desc())
+            ).fetchall()
+        return [dict(row._mapping) for row in rows]
+
+    def get_peer(self, address: str) -> Optional[dict]:
+        """Return a single peer record by address, or None if unknown."""
+        with self.engine.connect() as conn:
+            row = conn.execute(
+                select(peers_table).where(peers_table.c.address == address)
+            ).fetchone()
+        return dict(row._mapping) if row is not None else None
+
+    def peer_count(self) -> int:
+        """Return the number of known peers."""
+        with self.engine.connect() as conn:
+            rows = conn.execute(select(peers_table.c.address)).fetchall()
+        return len(rows)
+
+    def remove_peer(self, address: str) -> None:
+        """Remove a peer from the registry."""
+        with self.engine.begin() as conn:
+            conn.execute(peers_table.delete().where(peers_table.c.address == address))

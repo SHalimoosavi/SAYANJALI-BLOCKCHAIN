@@ -150,6 +150,60 @@ class FutureConsensusOptions:
     dpos_epoch_blocks: int = 100
 
 
+def _env_list(key: str, default: list[str]) -> list[str]:
+    """Read a comma-separated environment variable as a list of strings."""
+    raw = os.getenv(key)
+    if raw is None or raw.strip() == "":
+        return list(default)
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+@dataclass(frozen=True)
+class P2PConfig:
+    """
+    Peer-to-peer networking parameters (Phase 2).
+
+    P2P endpoints are served on the same FastAPI application and port as
+    the REST API (under the `/network/*` prefix) rather than a second
+    listener, keeping the transport a single lightweight HTTP surface for
+    this MVP. `advertised_address` exists separately from `host`/`port`
+    because a node behind NAT or port-forwarding may need to tell peers a
+    different externally-reachable address than the one it binds locally.
+    """
+
+    node_id_override: str = field(
+        default_factory=lambda: _env_str("SYJ_NODE_ID", "")
+    )
+    advertised_address: str = field(
+        default_factory=lambda: _env_str("SYJ_ADVERTISED_ADDRESS", "")
+    )
+    bootstrap_peers: list[str] = field(
+        default_factory=lambda: _env_list("SYJ_BOOTSTRAP_PEERS", [])
+    )
+    max_peers: int = field(default_factory=lambda: _env_int("SYJ_MAX_PEERS", 25))
+    sync_timeout_seconds: float = field(
+        default_factory=lambda: float(_env_str("SYJ_SYNC_TIMEOUT", "10.0"))
+    )
+    propagation_timeout_seconds: float = field(
+        default_factory=lambda: float(_env_str("SYJ_PROPAGATION_TIMEOUT", "5.0"))
+    )
+    max_chain_sync_bytes: int = field(
+        default_factory=lambda: _env_int("SYJ_MAX_SYNC_BYTES", 8 * 1024 * 1024)
+    )
+    max_block_payload_bytes: int = field(
+        default_factory=lambda: _env_int("SYJ_MAX_BLOCK_PAYLOAD_BYTES", 512 * 1024)
+    )
+    max_transaction_payload_bytes: int = field(
+        default_factory=lambda: _env_int("SYJ_MAX_TX_PAYLOAD_BYTES", 16 * 1024)
+    )
+    rate_limit_requests: int = field(
+        default_factory=lambda: _env_int("SYJ_PEER_RATE_LIMIT_REQUESTS", 60)
+    )
+    rate_limit_window_seconds: float = field(
+        default_factory=lambda: float(_env_str("SYJ_PEER_RATE_LIMIT_WINDOW", "60.0"))
+    )
+
+
 @dataclass(frozen=True)
 class Settings:
     """Aggregate settings object exposing every configuration group."""
@@ -163,6 +217,7 @@ class Settings:
     future_consensus: FutureConsensusOptions = field(
         default_factory=FutureConsensusOptions
     )
+    p2p: P2PConfig = field(default_factory=P2PConfig)
 
     # Convenience passthroughs used frequently across the codebase.
     @property
@@ -188,6 +243,22 @@ class Settings:
     @property
     def network_name(self) -> str:
         return self.network.network_name
+
+    @property
+    def resolved_advertised_address(self) -> str:
+        """
+        Return the address this node should tell peers to reach it at.
+
+        Falls back to constructing one from the bind host/port when
+        SYJ_ADVERTISED_ADDRESS is not set. A bind host of 0.0.0.0 is not
+        itself a reachable address, so it is rewritten to 127.0.0.1 for
+        the fallback case (a node bound to all interfaces still needs to
+        advertise a concrete, dialable address).
+        """
+        if self.p2p.advertised_address:
+            return self.p2p.advertised_address.rstrip("/")
+        host = self.network.host if self.network.host != "0.0.0.0" else "127.0.0.1"
+        return f"http://{host}:{self.network.port}"
 
 
 @lru_cache(maxsize=1)
