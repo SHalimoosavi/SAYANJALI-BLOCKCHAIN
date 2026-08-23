@@ -64,6 +64,16 @@ def test_wallet_balance_for_fresh_address(client: TestClient):
 
 
 def test_full_transaction_and_mining_flow(client: TestClient):
+    """
+    Phase 6.5: POST /transaction/sign was removed -- private key material
+    must never reach this API. The client obtains a canonical, timestamped
+    envelope from /transaction/create, then signs it entirely locally
+    (via Wallet/Transaction, exactly as the CLI's create-transaction
+    command does) before submitting the already-signed result.
+    """
+    from blockchain.transaction import Transaction
+    from blockchain.wallet import Wallet
+
     sender = client.post("/wallet/create").json()
     receiver = client.post("/wallet/create").json()
 
@@ -80,26 +90,25 @@ def test_full_transaction_and_mining_flow(client: TestClient):
         },
     ).json()
 
-    sign_resp = client.post(
-        "/transaction/sign",
-        json={
-            "sender": sender["address"],
-            "receiver": receiver["address"],
-            "amount": 10.0,
-            "timestamp": create_resp["timestamp"],
-            "private_key": sender["private_key"],
-        },
-    ).json()
+    # Client-side signing -- no private key ever leaves this process.
+    wallet = Wallet.from_private_key(sender["private_key"])
+    tx = Transaction(
+        sender=sender["address"],
+        receiver=receiver["address"],
+        amount=10.0,
+        timestamp=create_resp["timestamp"],
+    )
+    tx.sign(wallet)
 
     submit_resp = client.post(
         "/transaction/submit",
         json={
-            "sender": sign_resp["sender"],
-            "receiver": sign_resp["receiver"],
-            "amount": sign_resp["amount"],
-            "timestamp": sign_resp["timestamp"],
-            "sender_public_key": sign_resp["sender_public_key"],
-            "signature": sign_resp["signature"],
+            "sender": tx.sender,
+            "receiver": tx.receiver,
+            "amount": tx.amount,
+            "timestamp": tx.timestamp,
+            "sender_public_key": tx.sender_public_key,
+            "signature": tx.signature,
         },
     ).json()
     assert submit_resp["accepted"], submit_resp.get("reason")

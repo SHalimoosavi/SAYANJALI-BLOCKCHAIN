@@ -66,7 +66,16 @@ class WalletBalanceResponse(BaseModel):
 
 
 class TransactionCreateRequest(BaseModel):
-    """Payload to construct an unsigned transaction."""
+    """
+    Payload to construct an unsigned transaction envelope.
+
+    This endpoint never receives or handles private key material -- it
+    exists only to hand back a canonical, timestamped transaction body
+    for the client to sign entirely locally (e.g. via
+    `blockchain.wallet.Wallet.sign` / `blockchain.transaction.Transaction.sign`,
+    the same functions the CLI uses) before submitting the signed result
+    to `/transaction/submit`.
+    """
 
     sender: str
     receiver: str
@@ -78,16 +87,6 @@ class TransactionCreateRequest(BaseModel):
         if not value or not value.strip():
             raise ValueError("Address must not be empty.")
         return value
-
-
-class TransactionSignRequest(BaseModel):
-    """Payload to sign a previously created transaction."""
-
-    sender: str
-    receiver: str
-    amount: float = Field(gt=0)
-    timestamp: float
-    private_key: str
 
 
 class TransactionSubmitRequest(BaseModel):
@@ -158,6 +157,7 @@ class PeerOut(BaseModel):
     status: str
     last_seen: Optional[float] = None
     registered_at: Optional[float] = None
+    trusted: bool = False
 
 
 class NetworkStatusResponse(BaseModel):
@@ -165,6 +165,7 @@ class NetworkStatusResponse(BaseModel):
 
     node_id: str
     self_address: str
+    public_key: str
     peer_count: int
     chain_length: int
     chain_work: int
@@ -219,11 +220,52 @@ class NetworkChainResponse(BaseModel):
     chain: list[dict]
 
 
+class PeerChallengeRequest(BaseModel):
+    """Payload requesting a fresh authentication challenge."""
+
+    node_id: str
+
+
+class PeerChallengeResponse(BaseModel):
+    """
+    A freshly issued, single-use challenge for `node_id` to sign as proof
+    of private-key possession. Expires after a short, server-configured
+    window if not used.
+    """
+
+    challenge: str
+    expires_in_seconds: float
+
+
+class PeerAuthenticateRequest(BaseModel):
+    """
+    Payload completing the challenge-response handshake.
+
+    `auth` is the signed handshake envelope (see
+    `blockchain.network.handshake.build_handshake_envelope`) -- a dict
+    rather than a strictly-typed nested model, since its exact shape is
+    owned and validated by the handshake module itself, not duplicated
+    here.
+    """
+
+    auth: dict
+
+
+class PeerAuthenticateResponse(BaseModel):
+    """Response to a completed (or failed) authentication handshake."""
+
+    authenticated: bool
+    reason: Optional[str] = None
+    self_node_id: Optional[str] = None
+    self_public_key: Optional[str] = None
+
+
 class BlockReceiveRequest(BaseModel):
     """Payload for a peer propagating a mined block to this node."""
 
     block: dict
     from_peer: Optional[str] = None
+    auth: Optional[dict] = None
 
 
 class TransactionReceiveRequest(BaseModel):
@@ -231,6 +273,14 @@ class TransactionReceiveRequest(BaseModel):
 
     transaction: dict
     from_peer: Optional[str] = None
+    auth: Optional[dict] = None
+
+
+class SyncRequest(BaseModel):
+    """Payload requesting this node synchronize from a peer."""
+
+    peer_address: Optional[str] = None
+    auth: Optional[dict] = None
 
 
 class ReceiveResponse(BaseModel):

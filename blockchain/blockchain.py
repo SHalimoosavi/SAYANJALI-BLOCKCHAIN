@@ -10,6 +10,7 @@ cross-cutting orchestration logic.
 
 from __future__ import annotations
 
+import threading
 from typing import Optional
 
 from blockchain.block import Block
@@ -45,6 +46,17 @@ class Blockchain:
         )
         self.mempool = Mempool()
         self.miner = Miner(self.consensus, self.settings.mining.block_reward)
+
+        # Phase 6.5: guards every section that mutates `self.chain` and its
+        # corresponding storage/mempool state. FastAPI runs synchronous
+        # route handlers (including the P2P propagation endpoints) in a
+        # threadpool, so concurrent requests can genuinely execute against
+        # this same Blockchain instance on separate threads. A plain
+        # `threading.Lock` (not `asyncio.Lock`) is the correct primitive
+        # here since these are real OS threads, not just async tasks --
+        # and it is the smallest change that closes the race without any
+        # broader asyncio redesign.
+        self.mutation_lock = threading.Lock()
 
         self.chain: list[Block] = self.storage.load_chain()
         if not self.chain:
@@ -167,16 +179,22 @@ class Blockchain:
             difficulty=difficulty,
         )
 
-        is_valid, reason = validate_block_against_chain(
-            new_block, self.latest_block, 1, self.consensus
-        )
-        if not is_valid:
-            raise ValidationError(f"Newly mined block failed validation: {reason}")
+        # Proof-of-work search happens outside the lock (it can be slow
+        # and doesn't touch shared state); the actual chain mutation is
+        # guarded, with validation re-run under the lock since the chain
+        # tip this block was mined against may have moved while mining
+        # was in progress (e.g. a concurrently-received propagated block).
+        with self.mutation_lock:
+            is_valid, reason = validate_block_against_chain(
+                new_block, self.latest_block, 1, self.consensus
+            )
+            if not is_valid:
+                raise ValidationError(f"Newly mined block failed validation: {reason}")
 
-        self.chain.append(new_block)
-        self.storage.save_block(new_block)
-        self.storage.update_balances_for_block(new_block)
-        self.mempool.remove_transactions(included_hashes)
+            self.chain.append(new_block)
+            self.storage.save_block(new_block)
+            self.storage.update_balances_for_block(new_block)
+            self.mempool.remove_transactions(included_hashes)
 
         logger.info(
             "Block %s appended to chain (hash=%s, tx_count=%s)",
@@ -218,43 +236,53 @@ class Blockchain:
         simple case (candidate extends the local tip) and a true reorg
         (candidate diverges below the local tip), persisting the result
         atomically via `Storage.reorganize_from`.
+
+        The entire operation runs under `mutation_lock`: unlike mining
+        (where only the PoW search is safely lockless), every step here
+        reads and then acts on `self.chain`/`self.total_work()`, so
+        holding the lock for the full call is what keeps the
+        read-then-mutate sequence atomic against concurrent propagation
+        or mining on other threads. Chain replacement is comparatively
+        rare, so the throughput cost of the coarser lock here is
+        acceptable in exchange for that simplicity and correctness.
         """
-        genesis_ok, reason = validate_genesis_identity(candidate_chain, self.genesis_block)
-        if not genesis_ok:
-            return False, reason
+        with self.mutation_lock:
+            genesis_ok, reason = validate_genesis_identity(candidate_chain, self.genesis_block)
+            if not genesis_ok:
+                return False, reason
 
-        candidate_work = chain_work(candidate_chain)
-        local_work = self.total_work()
-        if candidate_work <= local_work:
-            return False, (
-                f"Candidate chain work ({candidate_work}) does not exceed "
-                f"local chain work ({local_work})."
+            candidate_work = chain_work(candidate_chain)
+            local_work = self.total_work()
+            if candidate_work <= local_work:
+                return False, (
+                    f"Candidate chain work ({candidate_work}) does not exceed "
+                    f"local chain work ({local_work})."
+                )
+
+            is_valid, reason = validate_chain(candidate_chain, 1, self.consensus)
+            if not is_valid:
+                return False, f"Candidate chain invalid: {reason}"
+
+            fork_index = self._find_fork_index(candidate_chain)
+            new_blocks = candidate_chain[fork_index:]
+
+            self.storage.reorganize_from(fork_index, new_blocks)
+            self.chain = candidate_chain
+
+            # Any transaction now confirmed on the adopted chain should no
+            # longer sit in the local mempool as pending.
+            confirmed_hashes = [
+                tx.tx_hash for block in new_blocks for tx in block.transactions
+            ]
+            self.mempool.remove_transactions(confirmed_hashes)
+
+            logger.info(
+                "Chain replaced: fork_index=%s, new_length=%s, local_work=%s -> %s",
+                fork_index,
+                len(candidate_chain),
+                local_work,
+                candidate_work,
             )
-
-        is_valid, reason = validate_chain(candidate_chain, 1, self.consensus)
-        if not is_valid:
-            return False, f"Candidate chain invalid: {reason}"
-
-        fork_index = self._find_fork_index(candidate_chain)
-        new_blocks = candidate_chain[fork_index:]
-
-        self.storage.reorganize_from(fork_index, new_blocks)
-        self.chain = candidate_chain
-
-        # Any transaction now confirmed on the adopted chain should no
-        # longer sit in the local mempool as pending.
-        confirmed_hashes = [
-            tx.tx_hash for block in new_blocks for tx in block.transactions
-        ]
-        self.mempool.remove_transactions(confirmed_hashes)
-
-        logger.info(
-            "Chain replaced: fork_index=%s, new_length=%s, local_work=%s -> %s",
-            fork_index,
-            len(candidate_chain),
-            local_work,
-            candidate_work,
-        )
         return True, ""
 
     def _find_fork_index(self, candidate_chain: list[Block]) -> int:

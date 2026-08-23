@@ -203,6 +203,41 @@ class P2PConfig:
         default_factory=lambda: float(_env_str("SYJ_PEER_RATE_LIMIT_WINDOW", "60.0"))
     )
 
+    # --- Phase 6.5: networking hardening ------------------------------ #
+
+    allow_private_peer_addresses: bool = field(
+        default_factory=lambda: _env_str("SYJ_ALLOW_PRIVATE_PEER_ADDRESSES", "true").lower()
+        in ("1", "true", "yes")
+    )
+    # Whether loopback/RFC1918-private/link-local peer addresses are
+    # permitted. Defaults to True because local and LAN multi-node
+    # development (including the Termux workflow this project is built
+    # around) depends on 127.0.0.1-based peering. Security implication:
+    # set this to False for any deployment where peers are not fully
+    # trusted to be on a private, controlled network -- with it True, a
+    # malicious "peer" address can direct this node to make outbound
+    # requests to any address on its local network or loopback interface
+    # (SSRF).
+
+    auth_freshness_window_seconds: float = field(
+        default_factory=lambda: float(_env_str("SYJ_AUTH_FRESHNESS_WINDOW", "300.0"))
+    )
+    replay_cache_size: int = field(
+        default_factory=lambda: _env_int("SYJ_REPLAY_CACHE_SIZE", 10000)
+    )
+    max_sync_blocks: int = field(
+        default_factory=lambda: _env_int("SYJ_MAX_SYNC_BLOCKS", 50000)
+    )
+    max_handshake_payload_bytes: int = field(
+        default_factory=lambda: _env_int("SYJ_MAX_HANDSHAKE_PAYLOAD_BYTES", 8192)
+    )
+    max_request_body_bytes: int = field(
+        default_factory=lambda: _env_int("SYJ_MAX_REQUEST_BODY_BYTES", 1_048_576)
+    )
+    rate_limit_max_keys: int = field(
+        default_factory=lambda: _env_int("SYJ_RATE_LIMIT_MAX_KEYS", 10000)
+    )
+
 
 @dataclass(frozen=True)
 class Settings:

@@ -93,6 +93,25 @@ node_identity_table = Table(
     Column("created_at", Float, nullable=False),
 )
 
+p2p_identity_table = Table(
+    "p2p_identity",
+    metadata,
+    Column("node_id", String(64), primary_key=True),
+    Column("private_key_hex", String(128), nullable=False),
+    Column("public_key_hex", String(256), nullable=False),
+    Column("created_at", Float, nullable=False),
+)
+
+peer_credentials_table = Table(
+    "peer_credentials",
+    metadata,
+    Column("address", String(256), primary_key=True),
+    Column("node_id", String(64), nullable=False),
+    Column("public_key_hex", String(256), nullable=False),
+    Column("trusted", Integer, nullable=False, default=0),
+    Column("authenticated_at", Float, nullable=False),
+)
+
 
 class Storage:
     """
@@ -436,3 +455,100 @@ class Storage:
         """Remove a peer from the registry."""
         with self.engine.begin() as conn:
             conn.execute(peers_table.delete().where(peers_table.c.address == address))
+
+    # ------------------------------------------------------------------ #
+    # P2P identity (Phase 6.5) -- cryptographic binding for this node's
+    # own persistent node_id, kept in a dedicated table, never mixed with
+    # wallet or chain data.
+    # ------------------------------------------------------------------ #
+
+    def get_or_create_p2p_identity(self, node_id: str) -> tuple[str, str]:
+        """
+        Return (private_key_hex, public_key_hex) for this node's P2P
+        identity, generating and persisting a new SECP256k1 keypair bound
+        to `node_id` on first use.
+
+        `node_id` is passed in rather than generated here because it must
+        match the pre-existing `node_identity` table's value -- the
+        node's human-facing identifier is unchanged by Phase 6.5; this
+        method only adds a verifiable keypair behind it.
+        """
+        from blockchain.network.identity import P2PIdentity
+
+        with self.engine.begin() as conn:
+            row = conn.execute(
+                select(p2p_identity_table).where(
+                    p2p_identity_table.c.node_id == node_id
+                )
+            ).fetchone()
+            if row is not None:
+                data = row._mapping
+                return data["private_key_hex"], data["public_key_hex"]
+
+            identity = P2PIdentity.generate(node_id)
+            conn.execute(
+                p2p_identity_table.insert().values(
+                    node_id=node_id,
+                    private_key_hex=identity.private_key_hex,
+                    public_key_hex=identity.public_key_hex,
+                    created_at=time.time(),
+                )
+            )
+            return identity.private_key_hex, identity.public_key_hex
+
+    # ------------------------------------------------------------------ #
+    # Peer credentials (Phase 6.5) -- what has been cryptographically
+    # verified about a peer, distinct from the basic `peers` discovery
+    # registry. An address only appears here once it has successfully
+    # completed the authenticated handshake at least once.
+    # ------------------------------------------------------------------ #
+
+    def get_peer_credential(self, address: str) -> Optional[dict]:
+        """Return the stored credential for `address`, or None if never authenticated."""
+        with self.engine.connect() as conn:
+            row = conn.execute(
+                select(peer_credentials_table).where(
+                    peer_credentials_table.c.address == address
+                )
+            ).fetchone()
+        return dict(row._mapping) if row is not None else None
+
+    def upsert_peer_credential(
+        self, address: str, node_id: str, public_key_hex: str, trusted: bool
+    ) -> None:
+        """
+        Record or update a peer's authenticated credential.
+
+        Overwrites any prior credential for this address unconditionally
+        -- callers are responsible for deciding *whether* an overwrite is
+        appropriate (see `blockchain.network.handshake`'s identity-change
+        detection, which must run and be acted on before this is called
+        for an address that already has a differing stored credential).
+        """
+        with self.engine.begin() as conn:
+            row = conn.execute(
+                select(peer_credentials_table).where(
+                    peer_credentials_table.c.address == address
+                )
+            ).fetchone()
+            values = {
+                "node_id": node_id,
+                "public_key_hex": public_key_hex,
+                "trusted": int(trusted),
+                "authenticated_at": time.time(),
+            }
+            if row is None:
+                conn.execute(
+                    peer_credentials_table.insert().values(address=address, **values)
+                )
+            else:
+                conn.execute(
+                    peer_credentials_table.update()
+                    .where(peer_credentials_table.c.address == address)
+                    .values(**values)
+                )
+
+    def is_peer_trusted(self, address: str) -> bool:
+        """Return True if `address` has a stored, trusted credential."""
+        credential = self.get_peer_credential(address)
+        return bool(credential and credential["trusted"])

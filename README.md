@@ -1,7 +1,7 @@
 ![Python](https://img.shields.io/badge/python-3.13%2B-blue)
 ![FastAPI](https://img.shields.io/badge/framework-FastAPI-009688)
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Tests](https://img.shields.io/badge/tests-96%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-166%20passing-brightgreen)
 ![Version](https://img.shields.io/badge/version-v0.2.0--mvp-orange)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS%20%7C%20Android-lightgrey)
 ![GitHub Stars](https://img.shields.io/github/stars/sayanjali-nexus/sayanjali-blockchain?style=social)
@@ -480,7 +480,6 @@ exactly this scenario (in both directions) as part of the test suite.
 | POST | `/wallet/create` | Generate a new wallet |
 | GET | `/wallet/{address}` | Retrieve confirmed balance for an address |
 | POST | `/transaction/create` | Construct an unsigned transaction envelope |
-| POST | `/transaction/sign` | Sign a transaction with a private key |
 | POST | `/transaction/submit` | Submit a signed transaction to the mempool |
 | GET | `/transactions/pending` | List pending mempool transactions |
 | POST | `/mine` | Mine a new block and credit the reward to a miner address |
@@ -491,6 +490,16 @@ exactly this scenario (in both directions) as part of the test suite.
 | POST | `/network/sync` | Synchronize from one peer or all known peers |
 | POST | `/network/blocks/receive` | Accept a block propagated by a peer |
 | POST | `/network/transactions/receive` | Accept a transaction propagated by a peer |
+
+**Removed in Phase 6.5:** `POST /transaction/sign` has been removed
+entirely. It previously accepted a raw private key over HTTP so the
+server could sign on the client's behalf -- transmitting private key
+material over HTTP at all was an inherent security risk, regardless of
+deployment context. Transactions are now signed exclusively client-side
+(see the CLI's `create-transaction` command, or
+`blockchain.wallet.Wallet.sign` directly) before being submitted,
+already signed, via `/transaction/submit`. The server never receives or
+handles private key material for transaction signing.
 
 Full request and response schemas are generated automatically and are
 available at `/docs` and `/redoc` on a running node.
@@ -619,9 +628,11 @@ payload size ceiling.
   in-memory and per-process; it resets on restart and does not coordinate
   across a multi-instance deployment. It is a basic deterrent against an
   obviously abusive peer, not a production defense.
-- The `/transaction/sign` endpoint accepts a private key over HTTP and is
-  intended for single-operator development use only. It must not be
-  exposed on a shared or public-facing deployment.
+- `POST /transaction/sign` was removed in Phase 6.5: transmitting private
+  key material over HTTP, even for single-operator development use, was
+  an unnecessary security risk. Transactions are now signed exclusively
+  client-side before submission; the server never receives or handles
+  private key material for transaction signing.
 - Difficulty retargeting uses a conservative, bounded adjustment rather
   than a full ratio-based algorithm.
 - The REST API (including `/network/*`) has no built-in authentication or
@@ -645,7 +656,7 @@ issues, given the project's early stage.
 | 4 | Proof-of-Work consensus and mining | Complete |
 | 5 | REST API, CLI, persistent storage | Complete |
 | 6 | Peer-to-peer networking and multi-node synchronization | Complete |
-| 6.5 | Networking hardening: gossip protocol, peer authentication, handshake negotiation | Planned |
+| 6.5 | Networking hardening: peer authentication, handshake, SSRF protection, rate limiting, request-size enforcement, replay protection, concurrency protection | Implemented |
 | 7 | Full difficulty retargeting; Proof-of-Stake groundwork | Planned |
 | 8 | Block explorer | Planned |
 | 9 | Smart contract execution environment | Planned |
