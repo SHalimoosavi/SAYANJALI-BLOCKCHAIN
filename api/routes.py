@@ -7,12 +7,17 @@ Every endpoint required by the project specification is implemented here:
     GET  /wallet/{address}
     POST /wallet/create
     POST /transaction/create
-    POST /transaction/sign
     POST /transaction/submit
     POST /mine
     GET  /transactions/pending
     GET  /status
     GET  /health
+
+Phase 6.5: POST /transaction/sign was removed entirely -- private key
+material must never reach this API. Signing happens exclusively
+client-side (see blockchain.wallet.Wallet.sign). /transaction/create
+still exists to hand back a canonical, timestamped envelope for the
+client to sign locally before calling /transaction/submit.
 """
 
 from __future__ import annotations
@@ -28,7 +33,6 @@ from api.schemas import (
     StatusResponse,
     TransactionCreateRequest,
     TransactionOut,
-    TransactionSignRequest,
     TransactionSubmitRequest,
     TransactionSubmitResponse,
     WalletBalanceResponse,
@@ -36,7 +40,7 @@ from api.schemas import (
 )
 from blockchain.blockchain import Blockchain
 from blockchain.transaction import Transaction
-from blockchain.utils import ValidationError, WalletError, get_logger
+from blockchain.utils import ValidationError, get_logger
 from blockchain.wallet import Wallet, is_valid_address
 
 logger = get_logger("api.routes")
@@ -140,8 +144,10 @@ def create_transaction(payload: TransactionCreateRequest) -> TransactionOut:
     """
     Build an unsigned transaction envelope from sender/receiver/amount.
 
-    This does not touch the mempool -- it only returns the exact payload
-    the client must sign next via POST /transaction/sign.
+    This does not touch the mempool and never handles private key
+    material -- it only returns the exact payload the client must sign
+    entirely locally (see blockchain.wallet.Wallet.sign) before calling
+    POST /transaction/submit.
     """
     if not is_valid_address(payload.receiver):
         raise HTTPException(status_code=400, detail="Malformed receiver address.")
@@ -152,39 +158,14 @@ def create_transaction(payload: TransactionCreateRequest) -> TransactionOut:
     return TransactionOut(**tx.to_dict())
 
 
-@router.post("/transaction/sign", response_model=TransactionOut, tags=["transaction"])
-def sign_transaction(payload: TransactionSignRequest) -> TransactionOut:
-    """
-    Sign a transaction using the supplied private key.
-
-    Note: for production use, private keys should never be sent to a
-    remote server. This endpoint exists for MVP/CLI convenience where the
-    node and wallet are operated by the same person on the same device
-    (e.g. a single Termux instance).
-    """
-    try:
-        wallet = Wallet.from_private_key(payload.private_key)
-    except WalletError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    if wallet.address != payload.sender:
-        raise HTTPException(
-            status_code=400,
-            detail="Private key does not correspond to the given sender address.",
-        )
-
-    tx = Transaction(
-        sender=payload.sender,
-        receiver=payload.receiver,
-        amount=payload.amount,
-        timestamp=payload.timestamp,
-    )
-    try:
-        tx.sign(wallet)
-    except ValidationError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    return TransactionOut(**tx.to_dict())
+# Phase 6.5 security decision: the previous POST /transaction/sign endpoint
+# (which accepted a raw private_key over HTTP) has been removed entirely,
+# not merely deprecated. Signing now happens exclusively client-side --
+# see blockchain.wallet.Wallet.sign / blockchain.transaction.Transaction.sign,
+# which cli/main.py's create-transaction command already used even before
+# this change. This endpoint's removal means private key material can no
+# longer reach this API by any documented path; only a fully-signed
+# transaction (POST /transaction/submit) is ever accepted.
 
 
 @router.post(

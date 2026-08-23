@@ -227,32 +227,57 @@ def add_peer(
     address: str = typer.Argument(..., help="Peer address, e.g. http://127.0.0.1:8001")
 ) -> None:
     """
-    Register a peer and attempt bidirectional registration with it.
+    Register a peer for discovery, then cryptographically authenticate
+    with it.
 
-    Adds the peer to this node's local registry, then -- best-effort --
-    announces this node to the peer in return, so both sides learn about
-    each other from a single command.
+    Discovery registration alone never grants trust (per Phase 6.5's
+    security model) -- only a successfully completed challenge-response
+    handshake does. This command performs both: it registers this node
+    with the peer for discovery, then proves this node's identity to the
+    peer via the handshake, which makes *the peer* trust *this node*.
+
+    To establish full mutual trust (required before either side will
+    accept propagated blocks/transactions from the other, or accept the
+    other as a sync target), the operator on the peer's side needs to run
+    the equivalent command pointed back at this node:
+        python -m cli.main add-peer <this-node's-advertised-address>
     """
+    from blockchain.network.handshake import perform_handshake
+
     node = _get_network_node()
     accepted, reason = node.peers.register(address)
     if not accepted:
         console.print(f"[bold red]Could not add peer:[/bold red] {reason}")
         raise typer.Exit(code=1)
 
-    console.print(f"[bold green]Peer added:[/bold green] {address}")
+    console.print(f"[bold green]Peer added for discovery:[/bold green] {address}")
 
     result = node.client.register_with(address, node.node_id, node.self_address)
     if result is not None:
         node.peers.mark_seen(address, "online", result.get("self_node_id"))
-        console.print("Peer acknowledged registration (bidirectional link established).")
-        remote_peers = result.get("known_peers", [])
-        new_peers = [p for p in remote_peers if p != node.self_address]
-        if new_peers:
-            console.print(f"Peer knows about {len(new_peers)} additional address(es).")
+        console.print("Peer acknowledged discovery registration.")
     else:
         node.peers.mark_seen(address, "offline")
         console.print(
-            "[yellow]Peer did not respond to registration; added locally as offline.[/yellow]"
+            "[yellow]Peer did not respond to discovery registration.[/yellow]"
+        )
+
+    console.print("Attempting cryptographic authentication...")
+    auth_ok, auth_reason = perform_handshake(node, address)
+    if auth_ok:
+        console.print(
+            "[bold green]Authenticated:[/bold green] the peer now trusts this node."
+        )
+        console.print(
+            "[dim]For full mutual trust, run the equivalent add-peer command on "
+            f"the peer's side, pointed at {node.self_address}[/dim]"
+        )
+    else:
+        console.print(f"[yellow]Authentication not completed:[/yellow] {auth_reason}")
+        console.print(
+            "[dim]The peer is registered for discovery but is not yet trusted -- "
+            "block/transaction propagation and sync will not work with it until "
+            "authentication succeeds.[/dim]"
         )
 
 

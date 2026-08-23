@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from api.middleware import MaxBodySizeMiddleware
 from api.network_routes import router as network_router
 from api.routes import router
 from blockchain.utils import get_logger
@@ -43,7 +44,7 @@ app = FastAPI(
         "REST API for the SAYANJALI BLOCKCHAIN MVP, powering the SYJ Token "
         "network operated by SAYANJALI NEXUS PRIVATE LIMITED."
     ),
-    version="0.1.0-mvp",
+    version="0.2.0-mvp",
     lifespan=lifespan,
 )
 
@@ -56,6 +57,26 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+# Phase 6.5: enforces actual request body byte limits before FastAPI/
+# Pydantic ever parses a body, closing the gap where the old per-route
+# Content-Length check ran too late to matter. Per-path overrides give
+# small handshake/registration payloads a tight cap while block
+# propagation gets the larger, block-specific limit; everything else
+# (including GET requests, which carry no body) falls back to the
+# generic default.
+app.add_middleware(
+    MaxBodySizeMiddleware,
+    default_max_bytes=settings.p2p.max_request_body_bytes,
+    path_overrides={
+        "/network/blocks/receive": settings.p2p.max_block_payload_bytes,
+        "/network/transactions/receive": settings.p2p.max_transaction_payload_bytes,
+        "/network/peers/register": settings.p2p.max_handshake_payload_bytes,
+        "/network/peers/challenge": settings.p2p.max_handshake_payload_bytes,
+        "/network/peers/authenticate": settings.p2p.max_handshake_payload_bytes,
+        "/network/sync": settings.p2p.max_handshake_payload_bytes,
+    },
 )
 
 app.include_router(router)

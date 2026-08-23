@@ -1,5 +1,6 @@
 """
-Multi-node integration test for SAYANJALI BLOCKCHAIN's P2P layer.
+Multi-node integration test for SAYANJALI BLOCKCHAIN's P2P layer
+(Phase 6.5: authenticated protocol).
 
 This test launches two genuinely independent node processes (separate OS
 processes, separate SQLite databases, real HTTP over localhost) rather
@@ -8,15 +9,25 @@ layer uses simple module-level singletons rather than per-app dependency
 injection, so two `NetworkNode` instances cannot safely coexist in one
 process's module state -- real subprocesses sidestep that entirely and,
 as a bonus, exercise the actual deployment topology described in
-`README.md`'s "Running a Local Multi-Node Network" section:
+`README.md`'s "Running a Local Multi-Node Network" section.
 
-    Node A -> 127.0.0.1:<port A>
-    Node B -> 127.0.0.1:<port B>
-
-Demonstrates, in order: both nodes start, mutual peer registration,
-transaction propagation, block propagation, and chain convergence -- in
-both directions (A mines and B catches up, then B mines and A catches
-up).
+Demonstrates, in order:
+    1. Both nodes start (real, independent processes).
+    2. Bidirectional discovery registration.
+    3. Bidirectional cryptographic authentication (challenge-response
+       handshake, exercising real network round trips, not simulated).
+    4. Protocol negotiation is implicit in every authenticated call
+       (network_name/genesis_hash/protocol_version are checked on every
+       handshake and every propagated message).
+    5. Transaction propagation, authenticated, A -> B.
+    6. Block propagation, authenticated, A -> B.
+    7. Explicit synchronization call.
+    8. Chain convergence, verified via /network/chain on both sides.
+    9. Reverse direction: B mines, A catches up.
+    10. Adversarial checks against the live pair: an unauthenticated
+        third party cannot propagate blocks/transactions or trigger
+        sync; an unregistered/unauthenticated peer cannot spoof
+        propagation; a replayed handshake is rejected.
 """
 
 from __future__ import annotations
@@ -86,6 +97,29 @@ def _launch_node(port: int, db_file: str) -> subprocess.Popen:
     )
 
 
+def _run_cli(db_file: str, port: int, *args: str) -> subprocess.CompletedProcess:
+    """
+    Run a CLI command against a node's database, using the same
+    advertised address the node's live process uses, so authentication
+    performed via the CLI is visible to the live server (both read/write
+    the same SQLite file).
+    """
+    env = os.environ.copy()
+    env["SYJ_DB_FILE"] = db_file
+    env["SYJ_ADVERTISED_ADDRESS"] = f"http://127.0.0.1:{port}"
+    env["SYJ_DIFFICULTY"] = "1"
+    env["SYJ_NETWORK_NAME"] = "sayanjali-test-net"
+    env["SYJ_LOG_LEVEL"] = "WARNING"
+    return subprocess.run(
+        [sys.executable, "-m", "cli.main", *args],
+        cwd=str(PROJECT_ROOT),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+
 @pytest.fixture
 def two_nodes():
     """
@@ -102,7 +136,10 @@ def two_nodes():
     try:
         _wait_for_health(base_a)
         _wait_for_health(base_b)
-        yield base_a, base_b
+        yield {
+            "base_a": base_a, "base_b": base_b,
+            "db_a": db_a, "db_b": db_b,
+        }
     finally:
         proc_a.terminate()
         proc_b.terminate()
@@ -120,33 +157,29 @@ def two_nodes():
             db_path.unlink(missing_ok=True)
 
 
-def test_two_node_network_converges_in_both_directions(two_nodes):
-    base_a, base_b = two_nodes
+def test_two_node_network_converges_with_authentication(two_nodes):
+    base_a, base_b = two_nodes["base_a"], two_nodes["base_b"]
+    db_a, db_b = two_nodes["db_a"], two_nodes["db_b"]
 
-    # --- Step 1 & 2: both nodes already started (fixture setup). ---
+    # --- Nodes already started (fixture setup). ---
     status_a = httpx.get(f"{base_a}/network/status").json()
     status_b = httpx.get(f"{base_b}/network/status").json()
     assert status_a["node_id"] != status_b["node_id"]
+    assert status_a["public_key"] != status_b["public_key"]
     assert status_a["chain_length"] == 1
     assert status_b["chain_length"] == 1
 
-    # --- Step 3: nodes discover/register each other (bidirectional). ---
-    reg_a_to_b = httpx.post(
-        f"{base_a}/network/peers/register",
-        json={"node_id": status_b["node_id"], "address": base_b},
-    ).json()
-    assert reg_a_to_b["accepted"], reg_a_to_b
-
-    reg_b_to_a = httpx.post(
-        f"{base_b}/network/peers/register",
-        json={"node_id": status_a["node_id"], "address": base_a},
-    ).json()
-    assert reg_b_to_a["accepted"], reg_b_to_a
+    # --- Bidirectional discovery registration + authentication via the
+    # real CLI, exactly as an operator would run it. ---
+    result_a_adds_b = _run_cli(db_a, PORT_A, "add-peer", base_b)
+    assert "Authenticated" in result_a_adds_b.stdout, result_a_adds_b.stdout
+    result_b_adds_a = _run_cli(db_b, PORT_B, "add-peer", base_a)
+    assert "Authenticated" in result_b_adds_a.stdout, result_b_adds_a.stdout
 
     peers_a = httpx.get(f"{base_a}/network/peers").json()
     peers_b = httpx.get(f"{base_b}/network/peers").json()
-    assert peers_a["count"] == 1
-    assert peers_b["count"] == 1
+    assert peers_a["count"] == 1 and peers_a["peers"][0]["trusted"]
+    assert peers_b["count"] == 1 and peers_b["peers"][0]["trusted"]
 
     # --- Fund a wallet on A so it can send a transaction. ---
     sender = httpx.post(f"{base_a}/wallet/create").json()
@@ -155,14 +188,14 @@ def test_two_node_network_converges_in_both_directions(two_nodes):
     mine_response = httpx.post(f"{base_a}/mine", json={"miner_address": sender["address"]})
     assert mine_response.status_code == 200
 
-    # Block propagation, A -> B: B should pick up the new block via the
-    # broadcast triggered inside A's /mine handler.
+    # Block propagation, A -> B, authenticated, triggered by /mine's
+    # broadcast hook.
     converged = _wait_until(
         lambda: httpx.get(f"{base_b}/network/status").json()["chain_length"] == 2
     )
     assert converged, "Node B did not receive A's mined block."
 
-    # --- Step 4 & 5: a transaction is created and propagates, A -> B. ---
+    # --- A transaction is created and propagates, authenticated, A -> B. ---
     from blockchain.transaction import Transaction
     from blockchain.wallet import Wallet
 
@@ -173,11 +206,8 @@ def test_two_node_network_converges_in_both_directions(two_nodes):
     submit_response = httpx.post(
         f"{base_a}/transaction/submit",
         json={
-            "sender": tx.sender,
-            "receiver": tx.receiver,
-            "amount": tx.amount,
-            "timestamp": tx.timestamp,
-            "sender_public_key": tx.sender_public_key,
+            "sender": tx.sender, "receiver": tx.receiver, "amount": tx.amount,
+            "timestamp": tx.timestamp, "sender_public_key": tx.sender_public_key,
             "signature": tx.signature,
         },
     )
@@ -192,12 +222,11 @@ def test_two_node_network_converges_in_both_directions(two_nodes):
     )
     assert tx_propagated, "Transaction did not propagate from A to B."
 
-    # --- Step 6, 7, 8: a block is mined (confirming the tx) and propagates. ---
+    # --- A block is mined (confirming the tx) and propagates. ---
     mine_response_2 = httpx.post(f"{base_a}/mine", json={"miner_address": sender["address"]})
     assert mine_response_2.status_code == 200
     mined_block = mine_response_2.json()["block"]
 
-    # --- Step 9: both nodes converge on the same chain. ---
     converged_2 = _wait_until(
         lambda: httpx.get(f"{base_b}/network/status").json()["chain_length"] == 3
     )
@@ -210,6 +239,10 @@ def test_two_node_network_converges_in_both_directions(two_nodes):
 
     receiver_balance = httpx.get(f"{base_b}/wallet/{receiver['address']}").json()
     assert receiver_balance["balance"] == 10.0
+
+    # --- Explicit authenticated sync call (CLI-driven, real HTTP). ---
+    sync_result = _run_cli(db_b, PORT_B, "sync")
+    assert sync_result.returncode == 0, sync_result.stdout + sync_result.stderr
 
     # --- Reverse direction: B mines, A must catch up. ---
     b_miner = httpx.post(f"{base_b}/wallet/create").json()
@@ -227,3 +260,111 @@ def test_two_node_network_converges_in_both_directions(two_nodes):
 
     a_side_balance_for_b_miner = httpx.get(f"{base_a}/wallet/{b_miner['address']}").json()
     assert a_side_balance_for_b_miner["balance"] == 50.0  # default block reward
+
+
+def test_unauthenticated_third_party_cannot_propagate(two_nodes):
+    """
+    An adversarial third party (not a registered/authenticated peer of
+    either node) must not be able to inject blocks or transactions into
+    either node, or trigger synchronization, over real HTTP.
+    """
+    base_a = two_nodes["base_a"]
+
+    block_response = httpx.post(
+        f"{base_a}/network/blocks/receive",
+        json={"block": {"index": 99}, "from_peer": "http://attacker.invalid"},
+    )
+    assert block_response.status_code == 200
+    assert not block_response.json()["accepted"]
+
+    tx_response = httpx.post(
+        f"{base_a}/network/transactions/receive",
+        json={"transaction": {}, "from_peer": "http://attacker.invalid"},
+    )
+    assert tx_response.status_code == 200
+    assert not tx_response.json()["accepted"]
+
+    sync_response = httpx.post(f"{base_a}/network/sync", json={})
+    assert sync_response.status_code == 401
+
+    status = httpx.get(f"{base_a}/network/status").json()
+    assert status["chain_length"] == 1  # nothing was injected
+
+
+def test_replayed_handshake_response_rejected(two_nodes):
+    """
+    A captured, previously-valid handshake response must not be
+    replayable against the real live server -- the challenge is
+    single-use and consumed on first success.
+    """
+    from blockchain.network.handshake import build_handshake_envelope, AuthContext
+    from blockchain.network.identity import P2PIdentity
+
+    base_a = two_nodes["base_a"]
+
+    genesis_hash = httpx.get(f"{base_a}/network/chain").json()["chain"][0]["hash"]
+    network_name = httpx.get(f"{base_a}/network/status").json()["network_name"]
+
+    identity = P2PIdentity.generate("adversary-node")
+    ctx = AuthContext(
+        identity=identity,
+        network_name=network_name,
+        genesis_hash=genesis_hash,
+        advertised_address="http://127.0.0.1:9999",
+    )
+
+    challenge = httpx.post(
+        f"{base_a}/network/peers/challenge", json={"node_id": identity.node_id}
+    ).json()["challenge"]
+    envelope = build_handshake_envelope(ctx, challenge)
+
+    first = httpx.post(f"{base_a}/network/peers/authenticate", json={"auth": envelope}).json()
+    assert first["authenticated"], first
+
+    replay = httpx.post(f"{base_a}/network/peers/authenticate", json={"auth": envelope}).json()
+    assert not replay["authenticated"]
+    assert "challenge" in replay["reason"].lower() or "expired" in replay["reason"].lower()
+
+
+def test_unregistered_peer_address_rejected_for_sync(two_nodes):
+    """
+    Even an authenticated peer cannot direct a node to sync against an
+    arbitrary third-party address that node hasn't itself registered --
+    the SSRF-via-authenticated-caller closure verified against the real
+    live server.
+    """
+    from blockchain.network.handshake import (
+        AuthContext,
+        build_auth_envelope,
+        build_handshake_envelope,
+    )
+    from blockchain.network.identity import P2PIdentity
+
+    base_a = two_nodes["base_a"]
+
+    genesis_hash = httpx.get(f"{base_a}/network/chain").json()["chain"][0]["hash"]
+    network_name = httpx.get(f"{base_a}/network/status").json()["network_name"]
+
+    identity = P2PIdentity.generate("legit-authenticated-peer")
+    ctx = AuthContext(
+        identity=identity,
+        network_name=network_name,
+        genesis_hash=genesis_hash,
+        advertised_address="http://127.0.0.1:9998",
+    )
+    challenge = httpx.post(
+        f"{base_a}/network/peers/challenge", json={"node_id": identity.node_id}
+    ).json()["challenge"]
+    envelope = build_handshake_envelope(ctx, challenge)
+    auth_result = httpx.post(
+        f"{base_a}/network/peers/authenticate", json={"auth": envelope}
+    ).json()
+    assert auth_result["authenticated"]
+
+    malicious_target = "http://10.0.0.1:9999"
+    sync_envelope = build_auth_envelope(ctx, {"peer_address": malicious_target})
+    sync_response = httpx.post(
+        f"{base_a}/network/sync",
+        json={"peer_address": malicious_target, "auth": sync_envelope},
+    )
+    assert sync_response.status_code == 403
