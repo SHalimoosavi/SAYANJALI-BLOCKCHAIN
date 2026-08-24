@@ -120,6 +120,9 @@ class Blockchain:
             recent,
             self.settings.consensus.difficulty,
             self.settings.consensus.target_block_time_seconds,
+            self.settings.consensus.min_difficulty,
+            self.settings.consensus.max_difficulty,
+            self.settings.consensus.max_difficulty_adjustment_factor,
         )
 
     # ------------------------------------------------------------------ #

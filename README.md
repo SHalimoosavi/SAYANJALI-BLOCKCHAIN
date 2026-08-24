@@ -1,8 +1,8 @@
 ![Python](https://img.shields.io/badge/python-3.13%2B-blue)
 ![FastAPI](https://img.shields.io/badge/framework-FastAPI-009688)
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Tests](https://img.shields.io/badge/tests-166%20passing-brightgreen)
-![Version](https://img.shields.io/badge/version-v0.2.0--mvp-orange)
+![Tests](https://img.shields.io/badge/tests-195%20passing-brightgreen)
+![Version](https://img.shields.io/badge/version-v0.3.0--mvp-orange)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS%20%7C%20Android-lightgrey)
 ![GitHub Stars](https://img.shields.io/github/stars/sayanjali-nexus/sayanjali-blockchain?style=social)
 ![GitHub Issues](https://img.shields.io/github/issues/sayanjali-nexus/sayanjali-blockchain)
@@ -106,10 +106,11 @@ chain implementation.
 | Networking | Peer registration, discovery, and persisted peer registry | Implemented |
 | Networking | Chain synchronization by accumulated proof-of-work, with reorg support | Implemented |
 | Networking | Block and transaction propagation with duplicate/invalid rejection | Implemented |
-| Networking | Basic per-peer rate limiting and payload size limits | Implemented |
-| Testing | Automated test suite (92 tests) across all modules | Implemented |
+| Networking | Authenticated peer handshake (challenge-response), replay protection, SSRF-resistant address validation, bounded/tiered rate limiting | Implemented |
+| Consensus | Bitcoin-style ratio-based difficulty retarget | Implemented |
+| Testing | Automated test suite (195 tests) across all modules | Implemented |
 | Consensus | Proof-of-Stake / Delegated Proof-of-Stake | Planned |
-| Networking | Gossip protocol, peer authentication, handshake negotiation | Planned |
+| Networking | Real gossip/anti-entropy protocol | Planned |
 | Execution | Smart contract runtime | Planned |
 
 ## Architecture
@@ -530,6 +531,9 @@ overridden via environment variables.
 | Mining difficulty | `SYJ_DIFFICULTY` | `4` | Proof-of-Work difficulty target |
 | Target block time | `SYJ_TARGET_BLOCK_TIME` | `30` | Seconds, used for difficulty retargeting |
 | Difficulty adjustment interval | `SYJ_DIFFICULTY_ADJUSTMENT_INTERVAL` | `10` | Blocks between retarget evaluations |
+| Minimum difficulty | `SYJ_MIN_DIFFICULTY` | `1` | Floor the ratio-based retarget will never drop below |
+| Maximum difficulty | `SYJ_MAX_DIFFICULTY` | `32` | Ceiling the ratio-based retarget will never exceed |
+| Max difficulty adjustment factor | `SYJ_MAX_DIFFICULTY_ADJUSTMENT_FACTOR` | `4` | Caps how much a single retarget window's measured timespan can influence the result (Bitcoin-style clamp) |
 | Block reward | `SYJ_BLOCK_REWARD` | `50.0` | Coinbase reward per mined block |
 | Network name | `SYJ_NETWORK_NAME` | `sayanjali-mainnet-mvp` | Logical network identifier |
 | Host | `SYJ_HOST` | `0.0.0.0` | REST API bind address |
@@ -561,14 +565,17 @@ a chain from a different network during synchronization.
 pytest -v
 ```
 
-The test suite contains 92 tests: the original 37 covering wallets,
-transactions, blocks, mining, consensus, chain validation, and the REST
-API surface, plus 55 added in Phase 2 covering peer registration, rate
-limiting, oversized-payload rejection, work-based chain synchronization,
-block/transaction propagation (including duplicate and invalid rejection),
-and a genuine two-process multi-node integration test. Every test runs
-against an isolated, temporary SQLite database, so the test suite never
-modifies a developer's local chain state.
+The test suite contains 195 tests: 37 from the initial MVP (wallets,
+transactions, blocks, mining, consensus, chain validation, REST API), 55
+added in Phase 2 (peer registration, rate limiting, oversized-payload
+rejection, work-based chain synchronization, block/transaction
+propagation, and a two-process multi-node integration test), 70 added in
+Phase 6.5 (peer authentication, challenge-response handshake, SSRF
+protection, bounded rate limiting, replay protection, concurrency safety),
+and 29 added in Phase 7 (the ratio-based difficulty retarget: boundary
+conditions, determinism, multi-block progression, and adversarial input).
+Every test runs against an isolated, temporary SQLite database, so the
+test suite never modifies a developer's local chain state.
 
 The multi-node integration test (`tests/test_multi_node_integration.py`)
 launches two real node subprocesses on separate ports and databases,
@@ -633,15 +640,22 @@ payload size ceiling.
   an unnecessary security risk. Transactions are now signed exclusively
   client-side before submission; the server never receives or handles
   private key material for transaction signing.
-- Difficulty retargeting uses a conservative, bounded adjustment rather
-  than a full ratio-based algorithm.
 - The REST API (including `/network/*`) has no built-in authentication or
   TLS termination, and CORS is permissive by default.
+- Difficulty retargeting is bounded (see Configuration) but not
+  self-correcting against misconfiguration: `SYJ_TARGET_BLOCK_TIME` set
+  far below what real mining hardware can sustain, combined with a high
+  `SYJ_MAX_DIFFICULTY`, can cause sustained fast mining to compound
+  difficulty upward across successive retarget windows to the point
+  where mining becomes impractically slow -- discovered directly while
+  building this phase's test suite. `SYJ_MAX_DIFFICULTY` is the intended
+  defense; operators should set `SYJ_TARGET_BLOCK_TIME` realistically
+  for their actual mining throughput rather than relying on the ceiling
+  alone.
 
-**Future security roadmap** includes a real gossip protocol and peer
-handshake/authentication, client-side transaction signing (removing
-private key transmission entirely), a full difficulty retargeting
-algorithm, and a formal security audit ahead of any mainnet deployment.
+**Future security roadmap** includes a real gossip protocol, Proof-of-Stake
+or Delegated Proof-of-Stake design work, and a formal security audit
+ahead of any mainnet deployment.
 
 Vulnerabilities should be reported privately rather than through public
 issues, given the project's early stage.
@@ -656,8 +670,8 @@ issues, given the project's early stage.
 | 4 | Proof-of-Work consensus and mining | Complete |
 | 5 | REST API, CLI, persistent storage | Complete |
 | 6 | Peer-to-peer networking and multi-node synchronization | Complete |
-| 6.5 | Networking hardening: peer authentication, handshake, SSRF protection, rate limiting, request-size enforcement, replay protection, concurrency protection | Implemented |
-| 7 | Full difficulty retargeting; Proof-of-Stake groundwork | Planned |
+| 6.5 | Networking hardening: peer authentication, handshake negotiation (complete); gossip protocol (not started) | Partial |
+| 7 | Full difficulty retargeting (complete); Proof-of-Stake groundwork (not started) | Partial |
 | 8 | Block explorer | Planned |
 | 9 | Smart contract execution environment | Planned |
 | 10 | Governance mechanisms and SDK | Planned |

@@ -75,6 +75,44 @@ class ConsensusConfig:
     )
     max_nonce: int = 2**32
 
+    # --- Phase 7: Bitcoin-style ratio-based difficulty retarget bounds --- #
+
+    min_difficulty: int = field(
+        default_factory=lambda: _env_int("SYJ_MIN_DIFFICULTY", 1)
+    )
+    """
+    The retarget algorithm will never drop difficulty below this floor,
+    regardless of how slowly recent blocks were mined. Difficulty 0 would
+    mean any hash satisfies proof-of-work at all, which is never a safe
+    outcome to retarget down to automatically.
+    """
+
+    max_difficulty: int = field(
+        default_factory=lambda: _env_int("SYJ_MAX_DIFFICULTY", 32)
+    )
+    """
+    The retarget algorithm will never raise difficulty above this
+    ceiling, regardless of how quickly recent blocks were mined. A SHA-256
+    hex digest has only 64 characters total, so 32 (half the digest) is
+    already far beyond any value reachable by real mining hardware for
+    this MVP; the explicit ceiling exists to bound worst-case retarget
+    behavior under pathological or adversarial input rather than because
+    32 is expected to ever be approached in practice.
+    """
+
+    max_difficulty_adjustment_factor: int = field(
+        default_factory=lambda: _env_int("SYJ_MAX_DIFFICULTY_ADJUSTMENT_FACTOR", 4)
+    )
+    """
+    Caps how much a single retarget window's *measured timespan* can
+    influence the adjustment, by clamping it to between
+    expected_timespan / factor and expected_timespan * factor before
+    computing the new difficulty -- the same defense Bitcoin's own
+    retarget uses. This bounds the impact of a single unusually fast or
+    slow (or manipulated) interval, rather than letting one outlier
+    window swing difficulty arbitrarily far in one step.
+    """
+
 
 @dataclass(frozen=True)
 class MiningConfig:
