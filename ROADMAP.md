@@ -51,13 +51,24 @@ peer-to-peer protocol. Explicitly deferred:
 - A rate limiter shared across a deployment, rather than per-process
   in-memory only
 
-## Phase 7 — Consensus Improvements
-- Full Bitcoin-style difficulty retarget (ratio-based, not the current
-  MVP's conservative ±1 nudge)
-- Optional: begin Proof-of-Stake or Delegated Proof-of-Stake design work
-  (config placeholders already exist in `config/settings.py`'s
-  `FutureConsensusOptions`)
-- Milestone: difficulty stabilizes block time under varying network hash rate
+## Phase 7 — Consensus Improvements ✅ (difficulty retarget complete)
+- Full Bitcoin-style difficulty retarget: ratio-based, using exact
+  integer/rational arithmetic (`fractions.Fraction`, never floating
+  point), with explicit configurable minimum/maximum difficulty bounds
+  and an adjustment-factor clamp bounding how much any single retarget
+  window can move difficulty in one step -- replacing the previous
+  MVP's flat ±1 nudge, which adjusted relative to a static config value
+  rather than the chain's actual current difficulty
+- Proof-of-Stake / Delegated Proof-of-Stake design work: **not started**.
+  This was explicitly marked optional in this phase, and was not
+  undertaken -- `FutureConsensusOptions`' placeholder fields in
+  `config/settings.py` remain exactly as they were, reserved for when
+  that work begins
+- Milestone achieved: `tests/test_consensus_retarget.py` demonstrates
+  difficulty responding proportionally to sustained fast or slow mining
+  across multiple retarget windows, converging toward the target block
+  time rather than either staying fixed or overshooting via a fixed-size
+  nudge
 
 ## Phase 8 — Explorer
 - Public/local block and transaction explorer (web UI)
@@ -97,9 +108,17 @@ tests across wallets, transactions, blocks, mining, chain validation, and
 the REST API). Phase 6 shipped next: HTTP-based P2P networking and
 multi-node synchronization, bringing the suite to 92 passing tests,
 including a real two-process integration test proving independent nodes
-converge on the same chain over actual HTTP. Phases 6.5–10 remain
-architected for but not yet implemented, per the project's scope: build
-each layer as an additive module on a clean core, not a rewrite.
+converge on the same chain over actual HTTP. Phase 6.5 hardened that
+networking layer -- peer authentication, a challenge-response handshake,
+SSRF-resistant address validation, bounded rate limiting, request body
+size limits, replay protection, and removal of server-side private-key
+handling -- bringing the suite to 166 passing tests, including an
+authenticated real two-process integration run. Phase 7 replaced the
+difficulty retarget algorithm with a Bitcoin-style ratio-based one,
+bringing the suite to 195 passing tests. Proof-of-Stake/DPoS design work
+(optional within Phase 7) and Phases 8–10 remain architected for but not
+yet implemented, per the project's scope: build each layer as an
+additive module on a clean core, not a rewrite.
 
 **A note on terminology:** Phase 6 makes this a networked, multi-node
 *prototype* -- nodes communicate, propagate, and converge. It is not

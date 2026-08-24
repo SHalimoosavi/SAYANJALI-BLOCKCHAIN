@@ -6,8 +6,10 @@
 pytest -v
 ```
 
-37 tests currently cover wallets, transactions, blocks, mining/consensus,
-chain validation, and the full REST API surface (via FastAPI's TestClient).
+195 tests currently cover wallets, transactions, blocks, mining/consensus
+(including the Phase 7 ratio-based difficulty retarget), chain validation,
+P2P networking and authentication, and the full REST API surface (via
+FastAPI's TestClient).
 
 ## Test isolation
 
@@ -47,6 +49,9 @@ pytest --cov=blockchain --cov=api --cov-report=term-missing
 | `tests/test_mining.py` | End-to-end mining, coinbase rewards, mempool inclusion |
 | `tests/test_validation.py` | Chain validity, tamper detection at the chain level |
 | `tests/test_api.py` | Every REST endpoint, including a full wallet → transaction → mine → balance flow |
+| `tests/test_network_*.py` | Peer registry, rate limiting, SSRF/address validation, identity, handshake, propagation, concurrency, network API endpoints |
+| `tests/test_multi_node_integration.py` | Real two-process HTTP convergence, authenticated handshake, adversarial rejection scenarios |
+| `tests/test_consensus_retarget.py` | Ratio-based difficulty retarget: boundaries, determinism, multi-block progression, adversarial input |
 
 ## Adding new tests
 
