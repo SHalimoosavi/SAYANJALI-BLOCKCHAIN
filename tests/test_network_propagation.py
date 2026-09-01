@@ -35,7 +35,7 @@ def _mine_block_dict(blockchain: Blockchain, miner_address: str) -> tuple:
         previous_hash=blockchain.latest_block.hash,
         mempool=blockchain.mempool,
         miner_address=miner_address,
-        difficulty=1,
+        difficulty=blockchain.current_difficulty(),  # Phase 1: must match protocol-expected value
     )
     return block, block.to_dict()
 

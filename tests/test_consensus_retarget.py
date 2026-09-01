@@ -244,6 +244,7 @@ def test_chain_validation_accepts_blocks_at_varying_difficulty(blockchain: Block
 def test_replace_chain_still_works_with_new_retarget(blockchain: Blockchain):
     """Regression: work-based chain adoption (Phase 2/6.5) must be unaffected."""
     from blockchain.mining import Miner
+    from blockchain.validators import expected_difficulty
 
     miner = Wallet.create()
     blockchain.mine_pending_transactions(miner.address)
@@ -252,9 +253,15 @@ def test_replace_chain_still_works_with_new_retarget(blockchain: Blockchain):
     engine = Miner(blockchain.consensus, blockchain.settings.mining.block_reward)
     candidate = [blockchain.chain[0]]
     for i in range(1, 4):
+        # Phase 1: validation now independently derives and enforces the
+        # exact protocol-required difficulty for each position, so this
+        # candidate must be mined at that same value -- not a static
+        # config literal -- exactly as real mining already does via
+        # Blockchain.current_difficulty().
+        required = expected_difficulty(candidate, blockchain.consensus, blockchain.settings.consensus)
         new_block, _ = engine.mine_block(
             index=i, previous_hash=candidate[-1].hash, mempool=blockchain.mempool,
-            miner_address=other_miner.address, difficulty=blockchain.settings.consensus.difficulty,
+            miner_address=other_miner.address, difficulty=required,
         )
         candidate.append(new_block)
 

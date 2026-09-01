@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 
 from blockchain.blockchain import Blockchain
-from blockchain.validators import chain_work
+from blockchain.validators import chain_work, expected_difficulty
 from blockchain.wallet import Wallet
 
 
@@ -98,24 +98,25 @@ def test_replace_chain_reorg_updates_balances_correctly(blockchain: Blockchain):
 
     # Build a competing, heavier fork purely in-memory (never touching
     # storage directly), starting from the shared genesis block, mined by
-    # a different address, so adopting it constitutes a true reorg. Mined
-    # at the same difficulty as the local fork (matching the test fixture's
-    # configured difficulty) so that adding more blocks straightforwardly
-    # accumulates more real work under the correct 16**difficulty scale --
-    # a handful of low-difficulty blocks would not outweigh a single
-    # higher-difficulty one, which is exactly the point of comparing work
-    # rather than length.
+    # a different address, so adopting it constitutes a true reorg. Each
+    # block is mined at its actual protocol-expected difficulty (Phase 1:
+    # validation now independently derives and enforces this exact value
+    # per position, rather than trusting a static config literal), which
+    # still accumulates more real work under the correct 16**difficulty
+    # scale than the single local-fork block -- a handful of low-difficulty
+    # blocks would not outweigh a single higher-difficulty one, which is
+    # exactly the point of comparing work rather than length.
     competing_miner = Wallet.create()
     miner_engine = Miner(blockchain.consensus, blockchain.settings.mining.block_reward)
-    local_difficulty = blockchain.settings.consensus.difficulty
     candidate = [blockchain.chain[0]]
     for i in range(1, 4):
+        required = expected_difficulty(candidate, blockchain.consensus, blockchain.settings.consensus)
         new_block, _ = miner_engine.mine_block(
             index=i,
             previous_hash=candidate[-1].hash,
             mempool=blockchain.mempool,
             miner_address=competing_miner.address,
-            difficulty=local_difficulty,
+            difficulty=required,
         )
         candidate.append(new_block)
 

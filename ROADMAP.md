@@ -120,6 +120,15 @@ bringing the suite to 195 passing tests. Proof-of-Stake/DPoS design work
 yet implemented, per the project's scope: build each layer as an
 additive module on a clean core, not a rewrite.
 
+A separate productionization effort, governed by its own phase sequence
+documented in `docs/PRODUCTIONIZATION_STATE.md` (distinct from this
+roadmap's phase numbering above -- its "Phase 1" is not this document's
+Phase 1), added 36 further tests fixing three CRITICAL protocol
+correctness findings (independent difficulty enforcement during
+validation, exact coinbase reward enforcement, mempool pending-spend
+accounting), bringing the suite to 231 passing tests as of that work's
+completion.
+
 **A note on terminology:** Phase 6 makes this a networked, multi-node
 *prototype* -- nodes communicate, propagate, and converge. It is not
 distributed consensus in the Byzantine-fault-tolerant sense, and it is not

@@ -72,6 +72,26 @@ class Mempool:
         ordered = sorted(self._transactions.values(), key=lambda tx: tx.timestamp)
         return ordered[:limit] if limit is not None else ordered
 
+    def pending_spend_for(self, address: str) -> float:
+        """
+        Return the sum of amounts already committed to `address`'s
+        currently-pending (mempool) transactions.
+
+        This is the enforcement point for Phase 1's mempool double-spend
+        fix: a sender's admission to the mempool must be checked against
+        their confirmed balance *minus* whatever they've already
+        committed to spend in other still-pending transactions -- not
+        against confirmed balance alone, which is what previously let two
+        transactions that individually looked affordable be accepted
+        together even though their sum wasn't. Computed on demand by
+        summing current mempool contents rather than maintained as a
+        separate running total, so there is no second piece of state that
+        could drift out of sync with `self._transactions`.
+        """
+        return sum(
+            tx.amount for tx in self._transactions.values() if tx.sender == address
+        )
+
     def size(self) -> int:
         """Return the number of pending transactions currently held."""
         return len(self._transactions)

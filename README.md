@@ -2,7 +2,7 @@
 ![FastAPI](https://img.shields.io/badge/framework-FastAPI-009688)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://img.shields.io/badge/tests-195%20passing-brightgreen)
-![Version](https://img.shields.io/badge/version-v0.3.0--mvp-orange)
+![Version](https://img.shields.io/badge/version-v0.3.1--mvp-orange)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS%20%7C%20Android-lightgrey)
 ![GitHub Stars](https://img.shields.io/github/stars/sayanjali-nexus/sayanjali-blockchain?style=social)
 ![GitHub Issues](https://img.shields.io/github/issues/sayanjali-nexus/sayanjali-blockchain)
@@ -108,7 +108,7 @@ chain implementation.
 | Networking | Block and transaction propagation with duplicate/invalid rejection | Implemented |
 | Networking | Authenticated peer handshake (challenge-response), replay protection, SSRF-resistant address validation, bounded/tiered rate limiting | Implemented |
 | Consensus | Bitcoin-style ratio-based difficulty retarget | Implemented |
-| Testing | Automated test suite (195 tests) across all modules | Implemented |
+| Testing | Automated test suite (231 tests) across all modules | Implemented |
 | Consensus | Proof-of-Stake / Delegated Proof-of-Stake | Planned |
 | Networking | Real gossip/anti-entropy protocol | Planned |
 | Execution | Smart contract runtime | Planned |
@@ -565,15 +565,18 @@ a chain from a different network during synchronization.
 pytest -v
 ```
 
-The test suite contains 195 tests: 37 from the initial MVP (wallets,
+The test suite contains 231 tests: 37 from the initial MVP (wallets,
 transactions, blocks, mining, consensus, chain validation, REST API), 55
 added in Phase 2 (peer registration, rate limiting, oversized-payload
 rejection, work-based chain synchronization, block/transaction
 propagation, and a two-process multi-node integration test), 70 added in
 Phase 6.5 (peer authentication, challenge-response handshake, SSRF
 protection, bounded rate limiting, replay protection, concurrency safety),
-and 29 added in Phase 7 (the ratio-based difficulty retarget: boundary
-conditions, determinism, multi-block progression, and adversarial input).
+29 added in Phase 7 (the ratio-based difficulty retarget: boundary
+conditions, determinism, multi-block progression, and adversarial input),
+and 36 added in Phase 1 protocol-correctness hardening (independent
+difficulty enforcement during validation, exact coinbase reward
+enforcement, and mempool pending-spend/double-spend accounting).
 Every test runs against an isolated, temporary SQLite database, so the
 test suite never modifies a developer's local chain state.
 

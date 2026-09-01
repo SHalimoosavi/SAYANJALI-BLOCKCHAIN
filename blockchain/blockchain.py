@@ -47,16 +47,24 @@ class Blockchain:
         self.mempool = Mempool()
         self.miner = Miner(self.consensus, self.settings.mining.block_reward)
 
-        # Phase 6.5: guards every section that mutates `self.chain` and its
-        # corresponding storage/mempool state. FastAPI runs synchronous
-        # route handlers (including the P2P propagation endpoints) in a
-        # threadpool, so concurrent requests can genuinely execute against
-        # this same Blockchain instance on separate threads. A plain
-        # `threading.Lock` (not `asyncio.Lock`) is the correct primitive
-        # here since these are real OS threads, not just async tasks --
-        # and it is the smallest change that closes the race without any
-        # broader asyncio redesign.
-        self.mutation_lock = threading.Lock()
+        # Phase 6.5/Phase 1: guards every section that mutates `self.chain`
+        # and its corresponding storage/mempool state. FastAPI runs
+        # synchronous route handlers (including the P2P propagation
+        # endpoints) in a threadpool, so concurrent requests can genuinely
+        # execute against this same Blockchain instance on separate
+        # threads. An `RLock` (not a plain `Lock`) is required rather than
+        # merely preferred: some call chains legitimately re-enter this
+        # lock on the same thread (e.g. `blockchain.network.propagation
+        # .receive_transaction` holds it while calling
+        # `submit_transaction`, which itself now also acquires it for
+        # Phase 1's mempool double-spend fix) -- a plain `Lock` would
+        # deadlock on that second acquisition since it isn't reentrant;
+        # `RLock` tracks a per-thread recursion count and only truly
+        # releases once it returns to zero, while still fully blocking
+        # *other* threads for the whole nested duration, so the
+        # cross-thread mutual-exclusion guarantee this lock exists for is
+        # unchanged.
+        self.mutation_lock = threading.RLock()
 
         self.chain: list[Block] = self.storage.load_chain()
         if not self.chain:
@@ -133,6 +141,15 @@ class Blockchain:
         """
         Validate and add a transaction to the mempool.
 
+        Checks the sender's confirmed balance minus whatever they've
+        already committed to spend in other currently-pending
+        transactions -- not confirmed balance alone. Two transactions
+        that each individually look affordable against confirmed balance
+        must still be rejected if their sum isn't (the double-spend fix
+        from the Phase 0 audit). The check-then-add sequence runs under
+        `mutation_lock` so two concurrent submissions from the same
+        sender can't both pass the check before either is recorded.
+
         Returns:
             (accepted, reason) -- reason explains rejection when accepted
             is False.
@@ -141,14 +158,19 @@ class Blockchain:
         if not is_valid:
             return False, reason
 
-        balance = self.get_balance(transaction.sender)
-        if not transaction.is_coinbase() and balance < transaction.amount:
-            return False, (
-                f"Insufficient balance: address {transaction.sender} has "
-                f"{balance}, needs {transaction.amount}."
-            )
+        with self.mutation_lock:
+            balance = self.get_balance(transaction.sender)
+            already_pending = self.mempool.pending_spend_for(transaction.sender)
+            if not transaction.is_coinbase() and (
+                already_pending + transaction.amount > balance
+            ):
+                return False, (
+                    f"Insufficient balance: address {transaction.sender} has "
+                    f"{balance} confirmed, {already_pending} already pending "
+                    f"in the mempool, and this transaction needs {transaction.amount}."
+                )
 
-        added = self.mempool.add_transaction(transaction)
+            added = self.mempool.add_transaction(transaction)
         if not added:
             return False, "Transaction rejected by mempool (duplicate or invalid)."
         return True, ""
@@ -189,7 +211,8 @@ class Blockchain:
         # was in progress (e.g. a concurrently-received propagated block).
         with self.mutation_lock:
             is_valid, reason = validate_block_against_chain(
-                new_block, self.latest_block, 1, self.consensus
+                new_block, self.chain, self.consensus, self.settings.consensus,
+                self.settings.mining.block_reward,
             )
             if not is_valid:
                 raise ValidationError(f"Newly mined block failed validation: {reason}")
@@ -215,11 +238,19 @@ class Blockchain:
         """
         Validate the entire in-memory chain from genesis to tip.
 
-        Uses a difficulty floor of 1 (any real proof-of-work) rather than
-        the live configured difficulty, since historical blocks may have
-        been mined at a lower difficulty before a retarget increased it.
+        Each block's difficulty and coinbase reward are independently
+        re-derived from the chain history immediately preceding it (not
+        from today's live configuration), so a historical block mined
+        before a retarget correctly continues to validate against the
+        difficulty that was actually expected at that point in history --
+        exact-match enforcement does not mean "everything must match
+        today's difficulty," it means "everything must match what the
+        protocol's own rules say was required at the time."
         """
-        return validate_chain(self.chain, 1, self.consensus)
+        return validate_chain(
+            self.chain, self.consensus, self.settings.consensus,
+            self.settings.mining.block_reward,
+        )
 
     def replace_chain(self, candidate_chain: list[Block]) -> tuple[bool, str]:
         """
@@ -262,7 +293,10 @@ class Blockchain:
                     f"local chain work ({local_work})."
                 )
 
-            is_valid, reason = validate_chain(candidate_chain, 1, self.consensus)
+            is_valid, reason = validate_chain(
+                candidate_chain, self.consensus, self.settings.consensus,
+                self.settings.mining.block_reward,
+            )
             if not is_valid:
                 return False, f"Candidate chain invalid: {reason}"
 

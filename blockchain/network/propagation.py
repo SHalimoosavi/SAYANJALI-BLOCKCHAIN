@@ -231,7 +231,8 @@ def receive_block(
             ), False
 
         is_valid, reason = validate_block_against_chain(
-            block, node.blockchain.latest_block, 1, node.blockchain.consensus
+            block, node.blockchain.chain, node.blockchain.consensus,
+            node.blockchain.settings.consensus, node.blockchain.settings.mining.block_reward,
         )
         if not is_valid:
             return False, f"Invalid block: {reason}", False

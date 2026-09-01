@@ -54,7 +54,7 @@ def test_concurrent_duplicate_block_delivery_is_safe(blockchain: Blockchain):
         previous_hash=blockchain.latest_block.hash,
         mempool=blockchain.mempool,
         miner_address=miner.address,
-        difficulty=1,
+        difficulty=blockchain.current_difficulty(),  # Phase 1: must match protocol-expected value
     )
     block_dict = block.to_dict()
 
@@ -162,7 +162,13 @@ def test_concurrent_mining_and_propagation_do_not_corrupt_chain(blockchain: Bloc
         previous_hash=blockchain.latest_block.hash,
         mempool=blockchain.mempool,
         miner_address=remote_miner.address,
-        difficulty=1,
+        # Phase 1: must be a genuinely valid candidate (correct expected
+        # difficulty) so this test still exercises the actual race
+        # between local mining and remote delivery -- a block hardcoded
+        # to the wrong difficulty would always lose for that unrelated
+        # reason, silently defeating the point of this test regardless of
+        # true concurrency behavior.
+        difficulty=blockchain.current_difficulty(),
     )
     remote_block_dict = remote_block.to_dict()
     envelope = build_auth_envelope(peer_ctx, remote_block_dict)
