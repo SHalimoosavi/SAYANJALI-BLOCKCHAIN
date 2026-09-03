@@ -175,9 +175,23 @@ class Blockchain:
             return False, "Transaction rejected by mempool (duplicate or invalid)."
         return True, ""
 
-    def get_balance(self, address: str) -> float:
-        """Return the current confirmed balance for `address`."""
+    def get_balance(self, address: str) -> int:
+        """Return the current confirmed balance in SYJ base units."""
         return self.storage.get_balance(address)
+
+    def get_balance_syj(self, address: str):
+        """Return a human-readable Decimal SYJ balance."""
+        from blockchain.native_asset import from_base_units
+        return from_base_units(self.get_balance(address))
+
+    def total_supply_base_units(self) -> int:
+        """Return cumulative native SYJ issuance represented by coinbase transactions."""
+        return sum(
+            tx.amount_base_units
+            for block in self.chain
+            for tx in block.transactions
+            if tx.is_coinbase()
+        )
 
     def get_pending_transactions(self) -> list[Transaction]:
         """Return all transactions currently waiting in the mempool."""
@@ -196,12 +210,20 @@ class Blockchain:
             The newly mined and appended Block.
         """
         difficulty = self.current_difficulty()
+        remaining_supply = (
+            self.settings.native_asset.max_supply_base_units
+            - self.total_supply_base_units()
+        )
+        if remaining_supply <= 0:
+            raise ValidationError("Maximum SYJ supply has been reached; mining issuance is exhausted.")
+        block_reward = min(self.settings.mining.block_reward, remaining_supply)
         new_block, included_hashes = self.miner.mine_block(
             index=self.latest_block.index + 1,
             previous_hash=self.latest_block.hash,
             mempool=self.mempool,
             miner_address=miner_address,
             difficulty=difficulty,
+            block_reward=block_reward,
         )
 
         # Proof-of-work search happens outside the lock (it can be slow
@@ -213,6 +235,7 @@ class Blockchain:
             is_valid, reason = validate_block_against_chain(
                 new_block, self.chain, self.consensus, self.settings.consensus,
                 self.settings.mining.block_reward,
+                self.settings.native_asset.max_supply_base_units,
             )
             if not is_valid:
                 raise ValidationError(f"Newly mined block failed validation: {reason}")
@@ -250,6 +273,7 @@ class Blockchain:
         return validate_chain(
             self.chain, self.consensus, self.settings.consensus,
             self.settings.mining.block_reward,
+            self.settings.native_asset.max_supply_base_units,
         )
 
     def replace_chain(self, candidate_chain: list[Block]) -> tuple[bool, str]:
@@ -296,6 +320,7 @@ class Blockchain:
             is_valid, reason = validate_chain(
                 candidate_chain, self.consensus, self.settings.consensus,
                 self.settings.mining.block_reward,
+                self.settings.native_asset.max_supply_base_units,
             )
             if not is_valid:
                 return False, f"Candidate chain invalid: {reason}"

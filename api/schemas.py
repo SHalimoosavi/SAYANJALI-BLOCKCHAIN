@@ -9,6 +9,7 @@ and OpenAPI documentation.
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator
@@ -19,7 +20,8 @@ class TransactionOut(BaseModel):
 
     sender: str
     receiver: str
-    amount: float
+    amount: str
+    amount_base_units: int
     timestamp: float
     sender_public_key: Optional[str] = None
     signature: Optional[str] = None
@@ -62,7 +64,8 @@ class WalletBalanceResponse(BaseModel):
     """Response for a wallet balance lookup."""
 
     address: str
-    balance: float
+    balance: str
+    balance_base_units: int
 
 
 class TransactionCreateRequest(BaseModel):
@@ -79,7 +82,7 @@ class TransactionCreateRequest(BaseModel):
 
     sender: str
     receiver: str
-    amount: float = Field(gt=0)
+    amount: Decimal = Field(gt=0)
 
     @field_validator("sender", "receiver")
     @classmethod
@@ -94,7 +97,8 @@ class TransactionSubmitRequest(BaseModel):
 
     sender: str
     receiver: str
-    amount: float = Field(gt=0)
+    amount: Decimal = Field(gt=0)
+    amount_base_units: Optional[int] = Field(default=None, gt=0)
     timestamp: float
     sender_public_key: str
     signature: str

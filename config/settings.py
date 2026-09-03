@@ -20,6 +20,8 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
+from blockchain.native_asset import BASE_UNITS_PER_SYJ, MAX_SUPPLY_BASE_UNITS, to_base_units
+
 
 BASE_DIR: Path = Path(__file__).resolve().parent.parent
 
@@ -116,10 +118,10 @@ class ConsensusConfig:
 
 @dataclass(frozen=True)
 class MiningConfig:
-    """Mining reward and coinbase parameters."""
+    """Mining reward and coinbase parameters, represented in base units."""
 
-    block_reward: float = field(
-        default_factory=lambda: float(_env_str("SYJ_BLOCK_REWARD", "50.0"))
+    block_reward: int = field(
+        default_factory=lambda: to_base_units(_env_str("SYJ_BLOCK_REWARD", "50.0"))
     )
     coinbase_address: str = "SYJ-COINBASE-0000000000000000000000000000"
     halving_interval: int = 210_000  # blocks; not enforced yet, reserved for later
@@ -169,6 +171,19 @@ class LoggingConfig:
     level: str = field(default_factory=lambda: _env_str("SYJ_LOG_LEVEL", "INFO"))
     max_bytes: int = 5 * 1024 * 1024  # 5 MB per log file
     backup_count: int = 5
+
+
+@dataclass(frozen=True)
+class NativeAssetConfig:
+    """Protocol-level native SYJ monetary constants.
+
+    Token allocations, vesting, burn, staking and other economics are
+    intentionally absent: only the fixed maximum supply is authoritative.
+    """
+
+    symbol: str = "SYJ"
+    base_units_per_syj: int = BASE_UNITS_PER_SYJ
+    max_supply_base_units: int = MAX_SUPPLY_BASE_UNITS
 
 
 @dataclass(frozen=True)
@@ -287,6 +302,7 @@ class Settings:
     network: NetworkConfig = field(default_factory=NetworkConfig)
     storage: StorageConfig = field(default_factory=StorageConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
+    native_asset: NativeAssetConfig = field(default_factory=NativeAssetConfig)
     future_consensus: FutureConsensusOptions = field(
         default_factory=FutureConsensusOptions
     )
@@ -298,7 +314,7 @@ class Settings:
         return self.consensus.difficulty
 
     @property
-    def reward(self) -> float:
+    def reward(self) -> int:
         return self.mining.block_reward
 
     @property

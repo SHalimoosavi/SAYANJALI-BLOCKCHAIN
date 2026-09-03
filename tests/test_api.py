@@ -60,7 +60,7 @@ def test_wallet_balance_for_fresh_address(client: TestClient):
     wallet_response = client.post("/wallet/create").json()
     balance_response = client.get(f"/wallet/{wallet_response['address']}")
     assert balance_response.status_code == 200
-    assert balance_response.json()["balance"] == 0.0
+    assert balance_response.json()["balance"] == "0"
 
 
 def test_full_transaction_and_mining_flow(client: TestClient):
@@ -105,7 +105,7 @@ def test_full_transaction_and_mining_flow(client: TestClient):
         json={
             "sender": tx.sender,
             "receiver": tx.receiver,
-            "amount": tx.amount,
+            "amount": tx.amount_syj.__str__(), "amount_base_units": tx.amount_base_units,
             "timestamp": tx.timestamp,
             "sender_public_key": tx.sender_public_key,
             "signature": tx.signature,
@@ -120,7 +120,7 @@ def test_full_transaction_and_mining_flow(client: TestClient):
     assert mine_again.status_code == 200
 
     receiver_balance = client.get(f"/wallet/{receiver['address']}").json()
-    assert receiver_balance["balance"] == 10.0
+    assert receiver_balance["balance"] == "10"
 
 
 def test_invalid_wallet_address_rejected(client: TestClient):

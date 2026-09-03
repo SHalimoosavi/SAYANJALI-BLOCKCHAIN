@@ -94,7 +94,7 @@ def test_exact_balance_spend_accepted(blockchain: Blockchain):
     _fund(blockchain, sender)
     reward = blockchain.settings.mining.block_reward
 
-    tx = Transaction(sender=sender.address, receiver=receiver.address, amount=reward)
+    tx = Transaction(sender=sender.address, receiver=receiver.address, amount_base_units=reward)
     tx.sign(sender)
     accepted, reason = blockchain.submit_transaction(tx)
     assert accepted, reason
@@ -107,7 +107,7 @@ def test_exact_balance_spend_then_any_more_rejected(blockchain: Blockchain):
     _fund(blockchain, sender)
     reward = blockchain.settings.mining.block_reward
 
-    tx_a = Transaction(sender=sender.address, receiver=receiver_a.address, amount=reward)
+    tx_a = Transaction(sender=sender.address, receiver=receiver_a.address, amount_base_units=reward)
     tx_a.sign(sender)
     assert blockchain.submit_transaction(tx_a)[0]
 
@@ -177,13 +177,13 @@ def test_confirmation_removes_pending_reservation(blockchain: Blockchain):
     tx_a = Transaction(sender=sender.address, receiver=receiver_a.address, amount=80.0)
     tx_a.sign(sender)
     assert blockchain.submit_transaction(tx_a)[0]
-    assert blockchain.mempool.pending_spend_for(sender.address) == 80.0
+    assert blockchain.mempool.pending_spend_for(sender.address) == 80 * 100_000_000
 
     blockchain.mine_pending_transactions(other_miner.address)  # confirms tx_a
-    assert blockchain.mempool.pending_spend_for(sender.address) == 0.0
+    assert blockchain.mempool.pending_spend_for(sender.address) == 0
 
     remaining_balance = blockchain.get_balance(sender.address)
-    tx_b = Transaction(sender=sender.address, receiver=receiver_b.address, amount=remaining_balance)
+    tx_b = Transaction(sender=sender.address, receiver=receiver_b.address, amount_base_units=remaining_balance)
     tx_b.sign(sender)
     accepted_b, reason_b = blockchain.submit_transaction(tx_b)
     assert accepted_b, reason_b
@@ -198,7 +198,7 @@ def test_rejected_transaction_reserves_nothing(blockchain: Blockchain):
     tx_too_big.sign(sender)
     accepted, _ = blockchain.submit_transaction(tx_too_big)
     assert not accepted
-    assert blockchain.mempool.pending_spend_for(sender.address) == 0.0
+    assert blockchain.mempool.pending_spend_for(sender.address) == 0
 
 
 def test_restart_pending_state_is_cleared_not_persisted(blockchain: Blockchain):
@@ -215,10 +215,10 @@ def test_restart_pending_state_is_cleared_not_persisted(blockchain: Blockchain):
     tx = Transaction(sender=sender.address, receiver=receiver.address, amount=10.0)
     tx.sign(sender)
     blockchain.submit_transaction(tx)
-    assert blockchain.mempool.pending_spend_for(sender.address) == 10.0
+    assert blockchain.mempool.pending_spend_for(sender.address) == 10 * 100_000_000
 
     reloaded = Blockchain(settings=blockchain.settings)
-    assert reloaded.mempool.pending_spend_for(sender.address) == 0.0
+    assert reloaded.mempool.pending_spend_for(sender.address) == 0
     # Confirmed balance, unlike mempool state, is fully preserved.
     assert reloaded.get_balance(sender.address) == blockchain.get_balance(sender.address)
 
@@ -287,7 +287,7 @@ def test_reorg_preserves_confirmed_balance_authority(blockchain: Blockchain):
 
     accepted, reason = blockchain.replace_chain(candidate)
     assert accepted, reason
-    assert blockchain.get_balance(miner.address) == 0.0  # original miner's reward was on the discarded fork
+    assert blockchain.get_balance(miner.address) == 0  # original miner's reward was on the discarded fork
 
     is_valid, reason = blockchain.is_chain_valid()
     assert is_valid, reason

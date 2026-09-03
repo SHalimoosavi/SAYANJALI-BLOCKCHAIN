@@ -126,7 +126,7 @@ def test_replace_chain_reorg_updates_balances_correctly(blockchain: Blockchain):
     assert accepted, reason
 
     # Original miner's reward from the discarded block must be reversed.
-    assert blockchain.get_balance(original_miner.address) == 0.0
+    assert blockchain.get_balance(original_miner.address) == 0
     # Competing miner should now hold rewards for all 3 adopted blocks.
     expected = blockchain.settings.mining.block_reward * 3
     assert blockchain.get_balance(competing_miner.address) == expected

@@ -23,7 +23,7 @@ MAX_TRANSACTIONS_PER_BLOCK = 500
 class Miner:
     """Coordinates mining a new block from pending mempool transactions."""
 
-    def __init__(self, consensus: ConsensusEngine, block_reward: float) -> None:
+    def __init__(self, consensus: ConsensusEngine, block_reward: int) -> None:
         self.consensus = consensus
         self.block_reward = block_reward
 
@@ -35,6 +35,7 @@ class Miner:
         miner_address: str,
         difficulty: int,
         max_transactions: int = MAX_TRANSACTIONS_PER_BLOCK,
+        block_reward: int | None = None,
     ) -> tuple[Block, list[str]]:
         """
         Assemble and mine a new block.
@@ -54,7 +55,8 @@ class Miner:
         """
         selected = mempool.get_pending(limit=max_transactions)
 
-        coinbase_tx = Transaction.new_coinbase(miner_address, self.block_reward)
+        reward = self.block_reward if block_reward is None else block_reward
+        coinbase_tx = Transaction.new_coinbase_base_units(miner_address, reward)
         block_transactions: list[Transaction] = [coinbase_tx, *selected]
 
         block = Block(

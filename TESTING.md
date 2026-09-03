@@ -6,7 +6,7 @@
 pytest -v
 ```
 
-231 tests currently cover wallets, transactions, blocks, mining/consensus
+244 tests currently cover wallets, transactions, blocks, mining/consensus
 (including the Phase 7 ratio-based difficulty retarget and Phase 1's
 independent difficulty/coinbase/mempool enforcement), chain validation,
 P2P networking and authentication, and the full REST API surface (via
@@ -79,3 +79,9 @@ python -m cli.main status
 
 Then start the API and hit `http://127.0.0.1:8000/docs` to exercise
 endpoints interactively via Swagger UI.
+
+## Phase 2 monetary acceptance tests
+
+`tests/test_native_asset.py` covers base-unit precision, conversion, malformed amounts, maximum-supply constants, and transaction round-trips. `tests/test_supply_invariant.py` covers cumulative issuance, excessive coinbase rejection, unfunded transfers, and deterministic reward capping at the remaining supply.
+
+The full suite for this development checkpoint completed with 244 passing tests on the native Termux development environment with the project's declared dependencies. This native run is the authoritative release verification for the checkpoint.

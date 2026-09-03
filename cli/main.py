@@ -143,7 +143,7 @@ def status() -> None:
 def create_transaction(
     private_key: str = typer.Option(..., prompt=True, hide_input=True, help="Sender's private key."),
     receiver: str = typer.Option(..., help="Receiver's wallet address."),
-    amount: float = typer.Option(..., help="Amount of SYJ to send."),
+    amount: str = typer.Option(..., help="Amount of SYJ to send (up to 8 decimal places)."),
 ) -> None:
     """Build, sign, and submit a transaction to the local node's mempool."""
     try:

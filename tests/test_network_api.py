@@ -322,7 +322,7 @@ def test_transaction_submit_via_api_broadcasts_without_error(client: TestClient)
         json={
             "sender": tx.sender,
             "receiver": tx.receiver,
-            "amount": tx.amount,
+            "amount": tx.to_dict()["amount"],
             "timestamp": tx.timestamp,
             "sender_public_key": tx.sender_public_key,
             "signature": tx.signature,
