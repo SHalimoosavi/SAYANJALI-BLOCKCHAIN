@@ -26,16 +26,19 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Log node startup and shutdown around the application's lifetime."""
+    """Own the NetworkNode lifecycle with the FastAPI application lifetime."""
+    from api.network_routes import get_network_node
+    node = get_network_node()
     logger.info(
-        "SAYANJALI BLOCKCHAIN node starting | network=%s | host=%s | port=%s | difficulty=%s",
-        settings.network_name,
-        settings.host,
-        settings.port,
-        settings.difficulty,
+        "SAYANJALI BLOCKCHAIN node starting | network=%s | chain_id=%s | host=%s | port=%s | difficulty=%s",
+        settings.network_name, settings.network.chain_id, settings.host, settings.port, settings.difficulty,
     )
-    yield
-    logger.info("SAYANJALI BLOCKCHAIN node shutting down.")
+    await node.start()
+    try:
+        yield
+    finally:
+        await node.stop()
+        logger.info("SAYANJALI BLOCKCHAIN node stopped cleanly.")
 
 
 app = FastAPI(

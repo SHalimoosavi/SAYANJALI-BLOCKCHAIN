@@ -29,8 +29,22 @@ import httpx
 
 from blockchain.network.address_security import validate_peer_address
 from blockchain.utils import get_logger
+from enum import Enum
 
 logger = get_logger("blockchain.network.protocol")
+
+class MessageType(str, Enum):
+    HELLO = "HELLO"
+    PEER_LIST = "PEER_LIST"
+    PING = "PING"
+    PONG = "PONG"
+    GET_CHAIN = "GET_CHAIN"
+    GET_BLOCK = "GET_BLOCK"
+    GET_BLOCKS = "GET_BLOCKS"
+    NEW_TRANSACTION = "NEW_TRANSACTION"
+    NEW_BLOCK = "NEW_BLOCK"
+    SYNC_REQUEST = "SYNC_REQUEST"
+    SYNC_RESPONSE = "SYNC_RESPONSE"
 
 
 class PeerClient:
@@ -148,7 +162,7 @@ class PeerClient:
         return self._post(
             peer_address,
             "/network/blocks/receive",
-            {"block": block, "from_peer": from_peer, "auth": auth_envelope},
+            {"message_type": MessageType.NEW_BLOCK.value, "block": block, "from_peer": from_peer, "auth": auth_envelope},
         )
 
     def send_transaction(
@@ -162,7 +176,7 @@ class PeerClient:
         return self._post(
             peer_address,
             "/network/transactions/receive",
-            {"transaction": transaction, "from_peer": from_peer, "auth": auth_envelope},
+            {"message_type": MessageType.NEW_TRANSACTION.value, "transaction": transaction, "from_peer": from_peer, "auth": auth_envelope},
         )
 
     def request_sync(
@@ -175,5 +189,5 @@ class PeerClient:
         return self._post(
             peer_address,
             "/network/sync",
-            {"auth": auth_envelope, "peer_address": target_peer_address},
+            {"message_type": MessageType.SYNC_REQUEST.value, "auth": auth_envelope, "peer_address": target_peer_address},
         )

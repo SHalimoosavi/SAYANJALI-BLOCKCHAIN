@@ -97,9 +97,14 @@ def sync_with_peer(node: NetworkNode, peer_address: str) -> SyncResult:
             local_length_before, local_length_before,
         )
 
+    if not node.peers.is_eligible(peer_address):
+        return SyncResult(peer_address, False, "Peer is in retry backoff.", local_length_before, local_length_before)
+
     payload = node.sync_client.get_chain(peer_address)
+    node._propagation_stats["sync_attempts"] += 1
 
     if payload is None:
+        node.peers.mark_failure(peer_address)
         return SyncResult(
             peer_address, False, "Peer unreachable or returned an error.",
             local_length_before, local_length_before,
@@ -121,6 +126,10 @@ def sync_with_peer(node: NetworkNode, peer_address: str) -> SyncResult:
         )
 
     accepted, reason = node.blockchain.replace_chain(candidate_chain)
+    if accepted:
+        node.peers.mark_seen(peer_address, "online")
+    elif reason.lower().startswith("peer") or "unreachable" in reason.lower():
+        node.peers.mark_failure(peer_address)
     local_length_after = node.blockchain.length
 
     if accepted:

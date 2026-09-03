@@ -83,6 +83,7 @@ from blockchain.network.handshake import (
 )
 from blockchain.network.node import NetworkNode
 from blockchain.network.ratelimit import PeerRateLimiter
+from blockchain.network.protocol import MessageType
 from blockchain.utils import get_logger
 from config.settings import get_settings
 
@@ -155,6 +156,13 @@ def _enforce_rate_limit(request: Request, tier: str, key_hint: Optional[str]) ->
         raise HTTPException(status_code=429, detail="Rate limit exceeded for this peer.")
 
 
+def _validate_message_type(payload: dict, expected: MessageType) -> None:
+    """Reject an explicit wire message type mismatch without requiring it for legacy peers."""
+    message_type = payload.get("message_type")
+    if message_type is not None and message_type != expected.value:
+        raise HTTPException(status_code=400, detail=f"Unexpected message type: {message_type!r}")
+
+
 def _reset_module_state_for_tests() -> None:
     """
     Reset every module-level singleton. Test-only helper -- production
@@ -195,6 +203,9 @@ def list_peers(request: Request) -> PeerListResponse:
                 last_seen=p.last_seen,
                 registered_at=p.registered_at,
                 trusted=node.is_trusted_peer(p.address),
+                failure_count=p.failure_count,
+                backoff_until=p.backoff_until,
+                capabilities=list(p.capabilities),
             )
             for p in peers
         ],
@@ -418,6 +429,7 @@ def receive_block(payload: BlockReceiveRequest, request: Request) -> ReceiveResp
     _enforce_rate_limit(request, "expensive", node_id_hint or payload.from_peer)
 
     node = get_network_node()
+    _validate_message_type(payload.model_dump(), MessageType.NEW_BLOCK)
     accepted, reason, should_rebroadcast = propagation.receive_block(
         node, payload.block, payload.from_peer, payload.auth
     )
@@ -445,6 +457,7 @@ def receive_transaction(
     _enforce_rate_limit(request, "expensive", node_id_hint or payload.from_peer)
 
     node = get_network_node()
+    _validate_message_type(payload.model_dump(), MessageType.NEW_TRANSACTION)
     accepted, reason, should_rebroadcast = propagation.receive_transaction(
         node, payload.transaction, payload.from_peer, payload.auth
     )
