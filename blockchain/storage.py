@@ -36,6 +36,7 @@ from sqlalchemy.engine import Engine
 
 from blockchain.block import Block
 from blockchain.transaction import Transaction
+from blockchain.native_asset import to_base_units
 from blockchain.utils import StorageError, get_logger
 
 logger = get_logger("blockchain.storage")
@@ -62,7 +63,7 @@ transactions_table = Table(
     Column("block_index", Integer, nullable=True),
     Column("sender", String(64), nullable=False),
     Column("receiver", String(64), nullable=False),
-    Column("amount", Float, nullable=False),
+    Column("amount_base_units", Integer, nullable=False),
     Column("timestamp", Float, nullable=False),
     Column("sender_public_key", Text, nullable=True),
     Column("signature", Text, nullable=True),
@@ -72,7 +73,7 @@ wallets_table = Table(
     "wallets",
     metadata,
     Column("address", String(64), primary_key=True),
-    Column("balance", Float, nullable=False, default=0.0),
+    Column("balance_base_units", Integer, nullable=False, default=0),
 )
 
 peers_table = Table(
@@ -122,10 +123,60 @@ class Storage:
     def __init__(self, database_url: str) -> None:
         try:
             self.engine: Engine = create_engine(database_url, future=True)
+            self._migrate_legacy_monetary_schema()
             metadata.create_all(self.engine)
         except Exception as exc:  # noqa: BLE001
             raise StorageError(f"Failed to initialize database: {exc}") from exc
         logger.info("Storage initialized at %s", database_url)
+
+    def _migrate_legacy_monetary_schema(self) -> None:
+        """Migrate legacy float monetary tables to integer base-unit tables."""
+        from sqlalchemy import inspect, text
+
+        inspector = inspect(self.engine)
+        tables = set(inspector.get_table_names())
+
+        if "transactions" in tables:
+            columns = {c["name"] for c in inspector.get_columns("transactions")}
+            if "amount" in columns and "amount_base_units" not in columns:
+                with self.engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE transactions RENAME TO transactions_legacy"))
+                    metadata.create_all(conn)
+                    rows = conn.execute(text(
+                        "SELECT tx_hash, block_index, sender, receiver, amount, timestamp, "
+                        "sender_public_key, signature FROM transactions_legacy"
+                    )).fetchall()
+                    for row in rows:
+                        conn.execute(
+                            text(
+                                "INSERT INTO transactions "
+                                "(tx_hash, block_index, sender, receiver, amount_base_units, timestamp, "
+                                "sender_public_key, signature) VALUES "
+                                "(:h, :bi, :s, :r, :a, :ts, :pk, :sig)"
+                            ),
+                            {
+                                "h": row[0], "bi": row[1], "s": row[2], "r": row[3],
+                                "a": to_base_units(str(row[4])), "ts": row[5],
+                                "pk": row[6], "sig": row[7],
+                            },
+                        )
+                    conn.execute(text("DROP TABLE transactions_legacy"))
+
+        inspector = inspect(self.engine)
+        tables = set(inspector.get_table_names())
+        if "wallets" in tables:
+            columns = {c["name"] for c in inspector.get_columns("wallets")}
+            if "balance" in columns and "balance_base_units" not in columns:
+                with self.engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE wallets RENAME TO wallets_legacy"))
+                    metadata.create_all(conn)
+                    rows = conn.execute(text("SELECT address, balance FROM wallets_legacy")).fetchall()
+                    for address, balance in rows:
+                        conn.execute(
+                            text("INSERT INTO wallets (address, balance_base_units) VALUES (:a, :b)"),
+                            {"a": address, "b": to_base_units(str(balance))},
+                        )
+                    conn.execute(text("DROP TABLE wallets_legacy"))
 
     # ------------------------------------------------------------------ #
     # Block persistence
@@ -158,7 +209,7 @@ class Storage:
                             block_index=block.index,
                             sender=tx.sender,
                             receiver=tx.receiver,
-                            amount=tx.amount,
+                            amount_base_units=tx.amount_base_units,
                             timestamp=tx.timestamp,
                             sender_public_key=tx.sender_public_key,
                             signature=tx.signature,
@@ -229,31 +280,31 @@ class Storage:
     # Wallet balance cache
     # ------------------------------------------------------------------ #
 
-    def get_balance(self, address: str) -> float:
+    def get_balance(self, address: str) -> int:
         """
-        Return the cached balance for `address`, computing it from the
-        full transaction history if no cache row exists yet.
+        Return the cached balance for `address` in integer base units,
+        computing it from transaction history if no cache row exists yet.
         """
         with self.engine.connect() as conn:
             row = conn.execute(
-                select(wallets_table.c.balance).where(
+                select(wallets_table.c.balance_base_units).where(
                     wallets_table.c.address == address
                 )
             ).fetchone()
         if row is not None:
-            return float(row[0])
+            return int(row[0])
         return self._compute_balance_from_history(address)
 
-    def _compute_balance_from_history(self, address: str) -> float:
+    def _compute_balance_from_history(self, address: str) -> int:
         """Recompute an address's balance from the full transaction ledger."""
         with self.engine.connect() as conn:
             incoming = conn.execute(
-                select(transactions_table.c.amount).where(
+                select(transactions_table.c.amount_base_units).where(
                     transactions_table.c.receiver == address
                 )
             ).fetchall()
             outgoing = conn.execute(
-                select(transactions_table.c.amount).where(
+                select(transactions_table.c.amount_base_units).where(
                     transactions_table.c.sender == address
                 )
             ).fetchall()
@@ -261,13 +312,13 @@ class Storage:
         total_out = sum(row[0] for row in outgoing)
         return total_in - total_out
 
-    def apply_balance_delta(self, address: str, delta: float) -> None:
+    def apply_balance_delta(self, address: str, delta: int) -> None:
         """Atomically adjust an address's cached balance by `delta`."""
         with self.engine.begin() as conn:
             self._apply_balance_delta_conn(conn, address, delta)
 
     @staticmethod
-    def _apply_balance_delta_conn(conn, address: str, delta: float) -> None:
+    def _apply_balance_delta_conn(conn, address: str, delta: int) -> None:
         """
         Adjust an address's cached balance by `delta` using an already-open
         connection/transaction. Factored out of `apply_balance_delta` so
@@ -275,24 +326,24 @@ class Storage:
         transaction instead of one commit per address.
         """
         row = conn.execute(
-            select(wallets_table.c.balance).where(wallets_table.c.address == address)
+            select(wallets_table.c.balance_base_units).where(wallets_table.c.address == address)
         ).fetchone()
         if row is None:
-            conn.execute(wallets_table.insert().values(address=address, balance=delta))
+            conn.execute(wallets_table.insert().values(address=address, balance_base_units=delta))
         else:
-            new_balance = float(row[0]) + delta
+            new_balance = int(row[0]) + delta
             conn.execute(
                 wallets_table.update()
                 .where(wallets_table.c.address == address)
-                .values(balance=new_balance)
+                .values(balance_base_units=new_balance)
             )
 
     def update_balances_for_block(self, block: Block) -> None:
         """Apply every transaction in `block` to the wallet balance cache."""
         for tx in block.transactions:
             if not tx.is_coinbase():
-                self.apply_balance_delta(tx.sender, -tx.amount)
-            self.apply_balance_delta(tx.receiver, tx.amount)
+                self.apply_balance_delta(tx.sender, -tx.amount_base_units)
+            self.apply_balance_delta(tx.receiver, tx.amount_base_units)
 
     def reorganize_from(self, fork_index: int, new_blocks: list[Block]) -> None:
         """
@@ -320,8 +371,8 @@ class Storage:
                     for tx_dict in json.loads(data["transactions_json"]):
                         tx = Transaction.from_dict(tx_dict)
                         if not tx.is_coinbase():
-                            self._apply_balance_delta_conn(conn, tx.sender, tx.amount)
-                        self._apply_balance_delta_conn(conn, tx.receiver, -tx.amount)
+                            self._apply_balance_delta_conn(conn, tx.sender, tx.amount_base_units)
+                        self._apply_balance_delta_conn(conn, tx.receiver, -tx.amount_base_units)
 
                 conn.execute(
                     transactions_table.delete().where(
@@ -356,15 +407,15 @@ class Storage:
                                 block_index=block.index,
                                 sender=tx.sender,
                                 receiver=tx.receiver,
-                                amount=tx.amount,
+                                amount_base_units=tx.amount_base_units,
                                 timestamp=tx.timestamp,
                                 sender_public_key=tx.sender_public_key,
                                 signature=tx.signature,
                             )
                         )
                         if not tx.is_coinbase():
-                            self._apply_balance_delta_conn(conn, tx.sender, -tx.amount)
-                        self._apply_balance_delta_conn(conn, tx.receiver, tx.amount)
+                            self._apply_balance_delta_conn(conn, tx.sender, -tx.amount_base_units)
+                        self._apply_balance_delta_conn(conn, tx.receiver, tx.amount_base_units)
         except Exception as exc:  # noqa: BLE001
             raise StorageError(f"Failed to reorganize chain from index {fork_index}: {exc}") from exc
 

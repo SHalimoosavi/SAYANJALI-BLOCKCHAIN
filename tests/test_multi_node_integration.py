@@ -206,7 +206,7 @@ def test_two_node_network_converges_with_authentication(two_nodes):
     submit_response = httpx.post(
         f"{base_a}/transaction/submit",
         json={
-            "sender": tx.sender, "receiver": tx.receiver, "amount": tx.amount,
+            "sender": tx.sender, "receiver": tx.receiver, "amount": tx.amount_syj.__str__(), "amount_base_units": tx.amount_base_units,
             "timestamp": tx.timestamp, "sender_public_key": tx.sender_public_key,
             "signature": tx.signature,
         },
@@ -238,7 +238,7 @@ def test_two_node_network_converges_with_authentication(two_nodes):
     assert chain_a["work"] == chain_b["work"]
 
     receiver_balance = httpx.get(f"{base_b}/wallet/{receiver['address']}").json()
-    assert receiver_balance["balance"] == 10.0
+    assert receiver_balance["balance"] == "10"
 
     # --- Explicit authenticated sync call (CLI-driven, real HTTP). ---
     sync_result = _run_cli(db_b, PORT_B, "sync")
@@ -259,7 +259,7 @@ def test_two_node_network_converges_with_authentication(two_nodes):
     assert chain_a_final["chain"][-1]["hash"] == chain_b_final["chain"][-1]["hash"]
 
     a_side_balance_for_b_miner = httpx.get(f"{base_a}/wallet/{b_miner['address']}").json()
-    assert a_side_balance_for_b_miner["balance"] == 50.0  # default block reward
+    assert a_side_balance_for_b_miner["balance"] == "50"  # default block reward
 
 
 def test_unauthenticated_third_party_cannot_propagate(two_nodes):
@@ -368,3 +368,104 @@ def test_unregistered_peer_address_rejected_for_sync(two_nodes):
         json={"peer_address": malicious_target, "auth": sync_envelope},
     )
     assert sync_response.status_code == 403
+
+PORT_C = 18973
+
+
+@pytest.fixture
+def three_nodes():
+    """Launch three independent node processes for the Phase 2 acceptance path."""
+    ports = (PORT_A, PORT_B, PORT_C)
+    dbs = tuple(f"test_node_{name}_{uuid.uuid4().hex}.db" for name in ("a3", "b3", "c3"))
+    bases = tuple(f"http://127.0.0.1:{port}" for port in ports)
+    procs = [_launch_node(port, db) for port, db in zip(ports, dbs)]
+    try:
+        for base in bases:
+            _wait_for_health(base)
+        yield {"bases": bases, "ports": ports, "dbs": dbs}
+    finally:
+        for proc in procs:
+            proc.terminate()
+        for proc in procs:
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+        for db_file in dbs:
+            (PROJECT_ROOT / "database" / db_file).unlink(missing_ok=True)
+
+
+def test_three_node_phase2_end_to_end(three_nodes):
+    """Exercise authenticated A->B/A->C propagation and final convergence."""
+    bases = three_nodes["bases"]
+    ports = three_nodes["ports"]
+    dbs = three_nodes["dbs"]
+    base_a, base_b, base_c = bases
+
+    assert all(httpx.get(f"{base}/network/status").json()["chain_length"] == 1 for base in bases)
+
+    for peer_base in (base_b, base_c):
+        result = _run_cli(dbs[0], ports[0], "add-peer", peer_base)
+        assert "Authenticated" in result.stdout, result.stdout + result.stderr
+    # Complete mutual trust so B and C will accept A's propagated blocks
+    # and transactions.
+    for idx, peer_base in ((1, base_a), (2, base_a)):
+        result = _run_cli(dbs[idx], ports[idx], "add-peer", peer_base)
+        assert "Authenticated" in result.stdout, result.stdout + result.stderr
+
+    peers = httpx.get(f"{base_a}/network/peers").json()
+    assert peers["count"] == 2
+    assert all(peer["trusted"] for peer in peers["peers"])
+
+    sender = httpx.post(f"{base_a}/wallet/create").json()
+    receiver = httpx.post(f"{base_c}/wallet/create").json()
+
+    mined = httpx.post(f"{base_a}/mine", json={"miner_address": sender["address"]})
+    assert mined.status_code == 200
+
+    assert _wait_until(lambda: httpx.get(f"{base_b}/network/status").json()["chain_length"] == 2)
+    assert _wait_until(lambda: httpx.get(f"{base_c}/network/status").json()["chain_length"] == 2)
+
+    from blockchain.transaction import Transaction
+    from blockchain.wallet import Wallet
+
+    wallet = Wallet.from_private_key(sender["private_key"])
+    tx = Transaction(sender["address"], receiver["address"], "10")
+    tx.sign(wallet)
+    response = httpx.post(
+        f"{base_a}/transaction/submit",
+        json={**tx.to_dict(), "amount": tx.to_dict()["amount"]},
+    )
+    assert response.status_code == 200
+    assert response.json()["accepted"], response.text
+
+    assert _wait_until(lambda: any(
+        item["tx_hash"] == tx.tx_hash
+        for item in httpx.get(f"{base_b}/transactions/pending").json()
+    ))
+    assert _wait_until(lambda: any(
+        item["tx_hash"] == tx.tx_hash
+        for item in httpx.get(f"{base_c}/transactions/pending").json()
+    ))
+
+    mined2 = httpx.post(f"{base_a}/mine", json={"miner_address": sender["address"]})
+    assert mined2.status_code == 200
+    assert _wait_until(lambda: httpx.get(f"{base_b}/network/status").json()["chain_length"] == 3)
+    assert _wait_until(lambda: httpx.get(f"{base_c}/network/status").json()["chain_length"] == 3)
+
+    chains = [httpx.get(f"{base}/network/chain").json() for base in bases]
+    assert len({c["chain"][-1]["hash"] for c in chains}) == 1
+    assert len({c["work"] for c in chains}) == 1
+
+    balances = [httpx.get(f"{base}/wallet/{receiver['address']}").json()["balance"] for base in bases]
+    assert balances == ["10", "10", "10"]
+    supplies = [
+        sum(
+            txd["amount_base_units"]
+            for block in c["chain"]
+            for txd in block["transactions"]
+            if txd["sender"] == "SYJ-COINBASE-0000000000000000000000000000"
+        )
+        for c in chains
+    ]
+    assert supplies == [10_000_000_000, 10_000_000_000, 10_000_000_000]

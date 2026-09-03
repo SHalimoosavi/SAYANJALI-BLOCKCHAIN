@@ -40,6 +40,7 @@ from api.schemas import (
 )
 from blockchain.blockchain import Blockchain
 from blockchain.transaction import Transaction
+from blockchain.native_asset import MAX_SUPPLY_SYJ
 from blockchain.utils import ValidationError, get_logger
 from blockchain.wallet import Wallet, is_valid_address
 
@@ -74,7 +75,8 @@ def _block_to_out(block) -> BlockOut:
             TransactionOut(
                 sender=tx.sender,
                 receiver=tx.receiver,
-                amount=tx.amount,
+                amount=tx.amount_syj.__str__(),
+                amount_base_units=tx.amount_base_units,
                 timestamp=tx.timestamp,
                 sender_public_key=tx.sender_public_key,
                 signature=tx.signature,
@@ -136,7 +138,11 @@ def get_wallet_balance(address: str) -> WalletBalanceResponse:
         raise HTTPException(status_code=400, detail="Malformed wallet address.")
     chain = get_blockchain()
     balance = chain.get_balance(address)
-    return WalletBalanceResponse(address=address, balance=balance)
+    return WalletBalanceResponse(
+        address=address,
+        balance=chain.get_balance_syj(address).__str__(),
+        balance_base_units=balance,
+    )
 
 
 @router.post("/transaction/create", response_model=TransactionOut, tags=["transaction"])
@@ -175,14 +181,20 @@ def create_transaction(payload: TransactionCreateRequest) -> TransactionOut:
 )
 def submit_transaction(payload: TransactionSubmitRequest) -> TransactionSubmitResponse:
     """Submit a fully-signed transaction to the mempool."""
-    tx = Transaction(
-        sender=payload.sender,
-        receiver=payload.receiver,
-        amount=payload.amount,
-        timestamp=payload.timestamp,
-        sender_public_key=payload.sender_public_key,
-        signature=payload.signature,
-    )
+    if payload.amount_base_units is not None:
+        tx = Transaction(
+            sender=payload.sender, receiver=payload.receiver,
+            amount_base_units=payload.amount_base_units,
+            timestamp=payload.timestamp,
+            sender_public_key=payload.sender_public_key, signature=payload.signature,
+        )
+    else:
+        tx = Transaction(
+            sender=payload.sender, receiver=payload.receiver,
+            amount=payload.amount, timestamp=payload.timestamp,
+            sender_public_key=payload.sender_public_key, signature=payload.signature,
+        )
+
     chain = get_blockchain()
     accepted, reason = chain.submit_transaction(tx)
 

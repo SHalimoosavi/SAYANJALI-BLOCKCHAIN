@@ -1,8 +1,8 @@
 ![Python](https://img.shields.io/badge/python-3.13%2B-blue)
 ![FastAPI](https://img.shields.io/badge/framework-FastAPI-009688)
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Tests](https://img.shields.io/badge/tests-195%20passing-brightgreen)
-![Version](https://img.shields.io/badge/version-v0.3.1--mvp-orange)
+![Tests](https://img.shields.io/badge/tests-244%20passing-brightgreen)
+![Version](https://img.shields.io/badge/version-v0.4.0--dev-orange)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS%20%7C%20Android-lightgrey)
 ![GitHub Stars](https://img.shields.io/github/stars/sayanjali-nexus/sayanjali-blockchain?style=social)
 ![GitHub Issues](https://img.shields.io/github/issues/sayanjali-nexus/sayanjali-blockchain)
@@ -108,7 +108,7 @@ chain implementation.
 | Networking | Block and transaction propagation with duplicate/invalid rejection | Implemented |
 | Networking | Authenticated peer handshake (challenge-response), replay protection, SSRF-resistant address validation, bounded/tiered rate limiting | Implemented |
 | Consensus | Bitcoin-style ratio-based difficulty retarget | Implemented |
-| Testing | Automated test suite (231 tests) across all modules | Implemented |
+| Testing | Automated test suite (244 tests) across all modules | Implemented |
 | Consensus | Proof-of-Stake / Delegated Proof-of-Stake | Planned |
 | Networking | Real gossip/anti-entropy protocol | Planned |
 | Execution | Smart contract runtime | Planned |
@@ -565,7 +565,7 @@ a chain from a different network during synchronization.
 pytest -v
 ```
 
-The test suite contains 231 tests: 37 from the initial MVP (wallets,
+The test suite contains 244 tests: 37 from the initial MVP (wallets,
 transactions, blocks, mining, consensus, chain validation, REST API), 55
 added in Phase 2 (peer registration, rate limiting, oversized-payload
 rejection, work-based chain synchronization, block/transaction
@@ -727,3 +727,21 @@ software engineering.
 
 **Lead Architect & Project Vision**
 Syed Ali Hasan Moosavi
+
+## Native SYJ monetary protocol (Phase 2 completion)
+
+SYJ is the native asset of SAYANJALI BLOCKCHAIN. Monetary state is represented as integer base units; floating-point arithmetic is not used for protocol balances or issuance.
+
+- Symbol: `SYJ`
+- Base-unit precision: `100,000,000` base units per SYJ (8 decimal places)
+- Maximum supply: `720,000,000 SYJ` (`72,000,000,000,000,000` base units)
+- Configured mining reward: `SYJ_BLOCK_REWARD` (default `50 SYJ`), stored internally in base units
+- Supply rule: each block's coinbase reward is `min(configured_reward, remaining_supply)`; once the maximum is reached, further issuance is rejected
+- Transaction amounts are normalized to integer base units at the protocol boundary
+- Chain validation replays balances and cumulative issuance before a block can be accepted
+
+Final SYJ allocations, vesting, staking, burn, governance, valuation, listing price, and other tokenomics are intentionally **not defined** by this release.
+
+### API monetary representation
+
+Human-facing transaction and balance values are returned as exact decimal strings, alongside integer `*_base_units` fields. This avoids precision loss in JSON clients while keeping the protocol representation exact.

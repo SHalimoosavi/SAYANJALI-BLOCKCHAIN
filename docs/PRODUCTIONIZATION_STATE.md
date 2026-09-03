@@ -210,3 +210,11 @@ instruction.
 2. The float-to-integer monetary migration (HIGH severity, not CRITICAL)
    remains an open decision from Phase 0, not addressed in Phase 1 since
    it was outside the three explicitly-approved findings.
+
+## Phase 2 native SYJ monetary hardening
+
+The native monetary layer now uses integer base units throughout protocol state. One SYJ equals 100,000,000 base units, and the protocol maximum is 720,000,000 SYJ (72,000,000,000,000,000 base units).
+
+Mining issuance is supply-aware: the coinbase reward is capped at the exact remaining supply, and mining stops once no issuance remains. Chain/block validation replays monetary state so peer-submitted blocks cannot create arbitrary supply or spend an unfunded balance.
+
+The release does not define final SYJ tokenomics or genesis allocations. Those remain a separate future protocol/economic decision.
