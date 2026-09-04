@@ -23,8 +23,7 @@ Network name is configurable in the current implementation.
 
 Default chain ID: `1`.
 
-Chain ID is configurable. The genesis hash and network name are
-currently stronger network-identity anchors in P2P authentication.
+Chain ID is configurable. The genesis hash is the strong chain-identity boundary used by the current P2P handshake; network name is also checked. `chain_id` is metadata/configuration in the current implementation and is **NOT** part of the current P2P handshake wire payload. It is reserved for a future compatibility/security decision and is not added by this compatibility freeze.
 
 ## 4. Genesis block
 
@@ -56,8 +55,7 @@ separators.
 Current wire/storage representation is JSON-compatible dictionary data
 containing: - header fields - block hash - transaction list
 
-Canonical byte-level serialization for cross-language consensus: **TO BE
-FROZEN FROM VECTORS**.
+The compatibility vectors freeze the current byte-level behavior. See `protocol/test-vectors/block.json` and `protocol/test-vectors/README.md`.
 
 ## 7. Block hash
 
@@ -78,8 +76,7 @@ Current Python implementation serializes transaction data as
 deterministic JSON for hashing and JSON dictionaries for
 persistence/API.
 
-Canonical byte-level format for Go compatibility: **TO BE FROZEN FROM
-VECTORS**.
+The compatibility vectors freeze the current byte-level behavior. See `protocol/test-vectors/transaction.json` and `protocol/test-vectors/README.md`.
 
 ## 10. Transaction hash
 
@@ -90,17 +87,11 @@ receiver - amount_base_units - timestamp - sender_public_key - signature
 
 ECDSA on SECP256k1 with SHA-256.
 
-The current Python library signs messages with its own ECDSA signing
-behavior. Cross-language deterministic signature vectors require a
-specified nonce/signature encoding policy before signatures can be used
-as byte-for-byte vectors.
+The current Python library signs messages with its non-deterministic ECDSA `sign()` behavior. Cross-language testing therefore uses fixed signature fixtures: implementations must verify the frozen signature and reproduce the transaction hash, but are not required to reproduce the same signature bytes from a private key/message.
 
 ## 12. Public key format
 
-Current wallet/P2P public keys are the raw verifying-key byte
-representation, hex encoded.
-
-Exact canonical byte format must be frozen in compatibility vectors.
+Current wallet/P2P public keys are `VerifyingKey.to_string()` raw bytes, hex encoded. They are not SEC1 `04 || X || Y` encoding. This representation is frozen by `protocol/test-vectors/address.json`.
 
 ## 13. Address derivation
 
@@ -177,8 +168,7 @@ window, clamps the timespan, derives target work using exact rational
 arithmetic and moves integer difficulty using geometric-midpoint
 thresholds.
 
-The exact algorithm must be captured in executable vectors before Go
-implementation.
+The exact algorithm is captured in executable vectors under `protocol/test-vectors/difficulty.json`, including the 9-interval behavior of a 10-block window, timespan clamping, exact rational target-work calculation and geometric-midpoint thresholds.
 
 ## 23. Difficulty encoding
 
@@ -192,12 +182,13 @@ not be "corrected" during Go migration without a protocol-change
 decision.
 
 Notably, a 10-block recent window contains 9 timestamp intervals.
+The current implementation expects the clamped retarget timespan to be an integer because it is passed directly as the denominator of `Fraction`. Difficulty compatibility vectors therefore use integer timestamps. Fractional timestamp retarget behavior is not newly defined in this phase; callers supplying such windows currently encounter the reference implementation's existing error behavior.
 
 ## 25. Chain work
 
 `work(block) = 16 ** difficulty`
 
-Chain work is the sum of block work.
+Chain work is the sum of block work. Frozen examples are in `protocol/test-vectors/chain_work.json`.
 
 ## 26. Chain selection
 
@@ -312,3 +303,11 @@ ADR; - updated specification; - compatibility vectors; - migration
 strategy; - testnet validation.
 
 No programming-language migration alone may change protocol semantics.
+
+## 41. Compatibility vectors
+
+The machine-readable compatibility package is under `protocol/test-vectors/`. It is generated from the Python reference implementation by `scripts/protocol_vectors/generate.py` and checked by `scripts/protocol_vectors/verify.py`. The package freezes genesis, address derivation, transaction hashing/signature verification, Merkle roots, block hashing, PoW checks, difficulty retargeting, accumulated work and monetary behavior.
+
+Canonical deterministic JSON is the current `json.dumps(..., sort_keys=True, separators=(",", ":"), default=str)` behavior, encoded as UTF-8 before signing/hashing. Numeric representation and field presence remain those produced by the existing Python payload builders; this phase does not introduce a new serializer.
+
+The vectors are compatibility artifacts, not a protocol redesign. Undefined items such as genesis allocation, transaction nonce, chain-wide protocol version, production P2P framing and future timestamp/MTP rules remain undefined.

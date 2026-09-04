@@ -1,0 +1,36 @@
+{
+  "cases": [
+    {
+      "accumulated_work": 4295033105,
+      "difficulties": [
+        0,
+        1,
+        2,
+        4,
+        8
+      ],
+      "per_block_work": [
+        1,
+        16,
+        256,
+        65536,
+        4294967296
+      ]
+    },
+    {
+      "accumulated_work": 73728,
+      "difficulties": [
+        3,
+        3,
+        4
+      ],
+      "per_block_work": [
+        4096,
+        4096,
+        65536
+      ]
+    }
+  ],
+  "rule": "sum(16 ** max(block.difficulty, 0))",
+  "vector_format_version": 1
+}

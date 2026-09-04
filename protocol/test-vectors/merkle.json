@@ -1,0 +1,48 @@
+{
+  "cases": [
+    {
+      "expected_merkle_root": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "name": "empty",
+      "transaction_hashes": []
+    },
+    {
+      "expected_merkle_root": "e59bd734b2735119c8acbc01133782aa7b80632c4ddc1252f999a8a4161caef1",
+      "name": "one",
+      "transaction_hashes": [
+        "e59bd734b2735119c8acbc01133782aa7b80632c4ddc1252f999a8a4161caef1"
+      ]
+    },
+    {
+      "expected_merkle_root": "0abd6934a6a1d9b50ad248888576a0c4880bf008b8e9bc534e197517271aa36d",
+      "name": "two",
+      "transaction_hashes": [
+        "e59bd734b2735119c8acbc01133782aa7b80632c4ddc1252f999a8a4161caef1",
+        "987ed428c7de9eaf6b8188f2490e10699e09c31b83c13de2d366280bf92d0083"
+      ]
+    },
+    {
+      "expected_merkle_root": "0c03bf68a6a44bbb9256c6a2fa9b391b771b7a16050fefaed51fac4a99716248",
+      "name": "three",
+      "transaction_hashes": [
+        "e59bd734b2735119c8acbc01133782aa7b80632c4ddc1252f999a8a4161caef1",
+        "987ed428c7de9eaf6b8188f2490e10699e09c31b83c13de2d366280bf92d0083",
+        "405737c5c0e72b738467f74cedf39bac94b02448495c59890a23e896954a57cf"
+      ]
+    },
+    {
+      "expected_merkle_root": "9cedb9ba6be6e4e0c9ced5e1236569fc7ef725079c87598275b194b9582cce04",
+      "name": "five",
+      "transaction_hashes": [
+        "e59bd734b2735119c8acbc01133782aa7b80632c4ddc1252f999a8a4161caef1",
+        "987ed428c7de9eaf6b8188f2490e10699e09c31b83c13de2d366280bf92d0083",
+        "405737c5c0e72b738467f74cedf39bac94b02448495c59890a23e896954a57cf",
+        "cc4e39b478d9ca5ef7bd75bd6793d291d9f9a15f63a649c1ce0fa2fe04ba8253",
+        "9b2a650722f20c738e2ce892badb0a37fab492b8783e9b8c703d1a4a82616c50"
+      ]
+    }
+  ],
+  "empty_rule": "SHA-256(empty UTF-8 string)",
+  "leaf_rule": "transaction hash strings",
+  "odd_rule": "duplicate final hash at each odd level",
+  "vector_format_version": 1
+}
