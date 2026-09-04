@@ -1,0 +1,36 @@
+SAYANJALI BLOCKCHAIN — PHASE 5.1 REMEDIATION BUILD
+CANONICAL SERIALIZATION + VETTED SECP256K1 + STATE HARDENING
+
+BASELINE
+- Phase 5.1 remediation target: 6fb6d0f99420e55e50b8896f2cdf382322043f48
+- Frozen Phase 4 protocol/vector baseline preserved unchanged
+
+REMEDIATION
+- corrected Python-compatible float zero/exponent formatting
+- corrected ensure_ascii escaping boundary
+- explicit rejection of unsupported canonical value types
+- 244-case deterministic CPython serialization oracle
+- vetted Decred secp256k1/v4.4.1 dependency
+- raw X||Y public-key protocol conversion preserved
+- raw R||S signature protocol conversion preserved
+- deterministic RFC6979 signing with low-S output; verification retains observed high-S acceptance
+- adversarial key/signature/message/public-key tests
+- fuzz target for malformed signature/public-key input
+- monetary supply invariant and underflow hardening
+
+FROZEN INPUTS
+- protocol/SYJ_PROTOCOL_SPEC.md unchanged
+- protocol/test-vectors/*.json unchanged
+
+PRODUCTION SCOPE EXCLUSIONS
+- no production P2P
+- no RPC
+- no production storage
+- no node lifecycle
+- no public testnet
+- no consensus/tokenomics redesign
+
+VALIDATION NOTE
+- Go tests using the external module require normal Go module download access.
+- The build artifact includes go.mod/go.sum with exact module versions and hashes.
+- Full validation must be repeated in the target repository environment after dependency download.
