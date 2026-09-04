@@ -7,6 +7,7 @@ import (
 	"math"
 	"sort"
 	"strconv"
+	"strings"
 	"unicode/utf16"
 )
 
@@ -68,7 +69,7 @@ func encode(b *bytes.Buffer, v any) error {
 			return err
 		}
 	case json.Number:
-		b.WriteString(string(x))
+		return fmt.Errorf("unsupported canonical JSON value type json.Number; use concrete integer or float types")
 	case []any:
 		b.WriteByte('[')
 		for i, item := range x {
@@ -99,8 +100,7 @@ func encode(b *bytes.Buffer, v any) error {
 		}
 		b.WriteByte('}')
 	default:
-		// Match the reference's default=str fallback for non-JSON values.
-		encodeString(b, fmt.Sprint(v))
+		return fmt.Errorf("unsupported canonical JSON value type %T", v)
 	}
 	return nil
 }
@@ -119,7 +119,16 @@ func encodeFloat(b *bytes.Buffer, f float64) error {
 		}
 		return nil
 	}
-	// Python repr(float) retains .0 for integral finite floats.
+	// Python json.dumps preserves the sign of zero and renders integral
+	// finite floats with a .0 suffix.
+	if f == 0 {
+		if math.Signbit(f) {
+			b.WriteString("-0.0")
+		} else {
+			b.WriteString("0.0")
+		}
+		return nil
+	}
 	var s string
 	af := math.Abs(f)
 	// CPython repr/json uses fixed-point notation for 1e-4 <= |x| < 1e16
@@ -129,7 +138,9 @@ func encodeFloat(b *bytes.Buffer, f float64) error {
 	} else {
 		s = strconv.FormatFloat(f, 'e', -1, 64)
 	}
-	if !containsExponent(s) && !containsDot(s) {
+	if containsExponent(s) {
+		s = normalizeExponent(s)
+	} else if !containsDot(s) {
 		s += ".0"
 	}
 	b.WriteString(s)
@@ -172,7 +183,7 @@ func encodeString(b *bytes.Buffer, s string) {
 		case '\t':
 			b.WriteString(`\t`)
 		default:
-			if r < 0x20 || r > 0x7f {
+			if r < 0x20 || r > 0x7e {
 				if r <= 0xffff {
 					writeU4(b, uint16(r))
 				} else {
@@ -195,4 +206,31 @@ func writeU4(b *bytes.Buffer, u uint16) {
 	b.WriteByte(hex[(u>>8)&0xf])
 	b.WriteByte(hex[(u>>4)&0xf])
 	b.WriteByte(hex[u&0xf])
+}
+
+func normalizeExponent(s string) string {
+	idx := strings.IndexByte(s, 'e')
+	if idx < 0 {
+		idx = strings.IndexByte(s, 'E')
+	}
+	if idx < 0 {
+		return s
+	}
+	mantissa, exponent := s[:idx], s[idx+1:]
+	sign := ""
+	if len(exponent) > 0 && (exponent[0] == '+' || exponent[0] == '-') {
+		sign = exponent[:1]
+		exponent = exponent[1:]
+	}
+	exponent = strings.TrimLeft(exponent, "0")
+	if exponent == "" {
+		exponent = "0"
+	}
+	for len(exponent) < 2 {
+		exponent = "0" + exponent
+	}
+	if sign == "" {
+		sign = "+"
+	}
+	return mantissa + "e" + sign + exponent
 }

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/block"
@@ -62,9 +63,49 @@ func u64(v any) uint64 {
 	return x
 }
 
+func concreteProtocolValues(v any) any {
+	switch x := v.(type) {
+	case json.Number:
+		raw := string(x)
+		if strings.ContainsAny(raw, ".eE") {
+			f, err := strconv.ParseFloat(raw, 64)
+			if err != nil {
+				panic(err)
+			}
+			return f
+		}
+		if strings.HasPrefix(raw, "-") {
+			i, err := strconv.ParseInt(raw, 10, 64)
+			if err != nil {
+				panic(err)
+			}
+			return i
+		}
+		u, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil {
+			panic(err)
+		}
+		return u
+	case []any:
+		out := make([]any, len(x))
+		for i, item := range x {
+			out[i] = concreteProtocolValues(item)
+		}
+		return out
+	case map[string]any:
+		out := make(map[string]any, len(x))
+		for k, item := range x {
+			out[k] = concreteProtocolValues(item)
+		}
+		return out
+	default:
+		return v
+	}
+}
+
 func TestCanonicalGenesisHeader(t *testing.T) {
 	v := vector(t, "genesis")
-	in := v["header_payload"].(map[string]any)
+	in := concreteProtocolValues(v["header_payload"]).(map[string]any)
 	got, err := canonicaljson.String(in)
 	if err != nil {
 		t.Fatal(err)

@@ -5,94 +5,99 @@ import (
 	"encoding/hex"
 	"errors"
 	"math/big"
+
+	secp256k1 "github.com/decred/dcrd/dcrec/secp256k1/v4"
+	secp256k1ecdsa "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 )
 
-var (
-	secpP, _  = new(big.Int).SetString("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F", 16)
-	secpN, _  = new(big.Int).SetString("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141", 16)
-	secpGx, _ = new(big.Int).SetString("79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798", 16)
-	secpGy, _ = new(big.Int).SetString("483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8", 16)
-)
-
+// CurveName returns the protocol curve name.
 func CurveName() string { return "SECP256k1" }
-func P() *big.Int       { return new(big.Int).Set(secpP) }
-func N() *big.Int       { return new(big.Int).Set(secpN) }
 
+// P and N expose immutable copies of the secp256k1 field prime and group order
+// for protocol-boundary validation and tests. Curve arithmetic is delegated to
+// the vetted secp256k1 implementation.
+func P() *big.Int { return new(big.Int).Set(secp256k1.Params().P) }
+func N() *big.Int { return new(big.Int).Set(secp256k1.Params().N) }
+
+func validatePrivateKey(priv []byte) error {
+	if len(priv) != secp256k1.PrivKeyBytesLen {
+		return errors.New("private key must be 32 bytes")
+	}
+	var scalar secp256k1.ModNScalar
+	if scalar.SetByteSlice(priv) || scalar.IsZero() {
+		return errors.New("private key scalar out of range")
+	}
+	return nil
+}
+
+// PublicKeyFromPrivate returns the frozen SYJ raw X||Y public-key encoding.
 func PublicKeyFromPrivate(priv []byte) ([]byte, error) {
-	if len(priv) != 32 {
-		return nil, errors.New("private key must be 32 bytes")
+	if err := validatePrivateKey(priv); err != nil {
+		return nil, err
 	}
-	d := new(big.Int).SetBytes(priv)
-	if d.Sign() <= 0 || d.Cmp(secpN) >= 0 {
-		return nil, errors.New("private key scalar out of range")
+	key := secp256k1.PrivKeyFromBytes(priv)
+	defer key.Zero()
+	serialized := key.PubKey().SerializeUncompressed()
+	if len(serialized) != secp256k1.PubKeyBytesLenUncompressed || serialized[0] != secp256k1.PubKeyFormatUncompressed {
+		return nil, errors.New("unexpected secp256k1 public-key encoding")
 	}
-	x, y := scalarBaseMult(d)
 	out := make([]byte, 64)
-	x.FillBytes(out[:32])
-	y.FillBytes(out[32:])
+	copy(out, serialized[1:])
 	return out, nil
 }
 
 func GeneratePrivateKey() ([]byte, error) {
-	for {
-		b := make([]byte, 32)
-		if _, err := rand.Read(b); err != nil {
-			return nil, err
-		}
-		d := new(big.Int).SetBytes(b)
-		if d.Sign() > 0 && d.Cmp(secpN) < 0 {
-			return b, nil
-		}
+	key, err := secp256k1.GeneratePrivateKeyFromRand(rand.Reader)
+	if err != nil {
+		return nil, err
 	}
+	defer key.Zero()
+	return append([]byte(nil), key.Serialize()...), nil
 }
 
+// ParsePublicKey validates the frozen raw X||Y encoding and returns coordinate
+// copies for callers that need protocol-boundary inspection. No curve arithmetic
+// is performed here; validation is delegated to the vetted library.
 func ParsePublicKey(raw []byte) (*big.Int, *big.Int, error) {
 	if len(raw) != 64 {
 		return nil, nil, errors.New("public key must be 64 raw bytes")
 	}
-	x := new(big.Int).SetBytes(raw[:32])
-	y := new(big.Int).SetBytes(raw[32:])
-	if !isOnCurve(x, y) {
-		return nil, nil, errors.New("public key is not on secp256k1")
+	sec1 := make([]byte, 65)
+	sec1[0] = secp256k1.PubKeyFormatUncompressed
+	copy(sec1[1:], raw)
+	pub, err := secp256k1.ParsePubKey(sec1)
+	if err != nil {
+		return nil, nil, err
 	}
-	return x, y, nil
+	return new(big.Int).Set(pub.X()), new(big.Int).Set(pub.Y()), nil
 }
 
 func VerifyECDSA(publicKeyHex, message string, signature []byte) bool {
 	pub, err := hex.DecodeString(publicKeyHex)
-	if err != nil {
-		return false
-	}
-	x, y, err := ParsePublicKey(pub)
-	if err != nil {
+	if err != nil || len(pub) != 64 {
 		return false
 	}
 	if len(signature) != 64 {
 		return false
 	}
-	r := new(big.Int).SetBytes(signature[:32])
-	s := new(big.Int).SetBytes(signature[32:])
-	if r.Sign() <= 0 || r.Cmp(secpN) >= 0 || s.Sign() <= 0 || s.Cmp(secpN) >= 0 {
+	sec1 := make([]byte, 65)
+	sec1[0] = secp256k1.PubKeyFormatUncompressed
+	copy(sec1[1:], pub)
+	publicKey, err := secp256k1.ParsePubKey(sec1)
+	if err != nil {
 		return false
 	}
-	zBytes := SHA256Bytes([]byte(message))
-	z := new(big.Int).SetBytes(zBytes[:])
-	w := new(big.Int).ModInverse(s, secpN)
-	if w == nil {
+
+	var r, s secp256k1.ModNScalar
+	if r.SetByteSlice(signature[:32]) || r.IsZero() {
 		return false
 	}
-	u1 := new(big.Int).Mul(z, w)
-	u1.Mod(u1, secpN)
-	u2 := new(big.Int).Mul(r, w)
-	u2.Mod(u2, secpN)
-	x1, y1 := scalarBaseMult(u1)
-	x2, y2 := scalarMult(x, y, u2)
-	xr, _ := pointAdd(x1, y1, x2, y2)
-	if xr == nil {
+	if s.SetByteSlice(signature[32:]) || s.IsZero() {
 		return false
 	}
-	xr.Mod(xr, secpN)
-	return xr.Cmp(r) == 0
+	sig := secp256k1ecdsa.NewSignature(&r, &s)
+	hash := SHA256Bytes([]byte(message))
+	return sig.Verify(hash[:], publicKey)
 }
 
 func VerifyECDSAHex(publicKeyHex, message, signatureHex string) bool {
@@ -103,106 +108,25 @@ func VerifyECDSAHex(publicKeyHex, message, signatureHex string) bool {
 	return VerifyECDSA(publicKeyHex, message, sig)
 }
 
-func scalarBaseMult(k *big.Int) (*big.Int, *big.Int) { return scalarMult(secpGx, secpGy, k) }
-
-// ScalarBaseMultForSigning exposes the base-point multiplication needed by
-// the wallet signer without exposing mutable curve parameters.
-func ScalarBaseMultForSigning(k *big.Int) (*big.Int, *big.Int) { return scalarBaseMult(k) }
-
-func scalarMult(px, py, k *big.Int) (*big.Int, *big.Int) {
-	if k.Sign() == 0 {
-		return nil, nil
+// SignECDSA signs a message and returns the frozen raw R||S encoding. The
+// underlying implementation uses RFC6979 deterministic nonces and canonical
+// low-S signatures; this does not change the protocol representation or the
+// verification rules for existing signatures.
+func SignECDSA(priv []byte, message string) ([]byte, error) {
+	if err := validatePrivateKey(priv); err != nil {
+		return nil, err
 	}
-	x, y := new(big.Int).Set(px), new(big.Int).Set(py)
-	rx, ry := (*big.Int)(nil), (*big.Int)(nil)
-	for i := k.BitLen() - 1; i >= 0; i-- {
-		if rx != nil {
-			rx, ry = pointDouble(rx, ry)
-		}
-		if k.Bit(i) == 1 {
-			if rx == nil {
-				rx, ry = new(big.Int).Set(x), new(big.Int).Set(y)
-			} else {
-				rx, ry = pointAddFull(rx, ry, x, y)
-			}
-		}
-	}
-	return rx, ry
-}
-
-func pointDouble(x1, y1 *big.Int) (*big.Int, *big.Int) {
-	if y1.Sign() == 0 {
-		return nil, nil
-	}
-	threeX2 := new(big.Int).Mul(x1, x1)
-	threeX2.Mul(threeX2, big.NewInt(3))
-	threeX2.Mod(threeX2, secpP)
-	den := new(big.Int).Mul(y1, big.NewInt(2))
-	den.Mod(den, secpP)
-	den.ModInverse(den, secpP)
-	lam := new(big.Int).Mul(threeX2, den)
-	lam.Mod(lam, secpP)
-	x3 := new(big.Int).Mul(lam, lam)
-	twoX := new(big.Int).Mul(x1, big.NewInt(2))
-	x3.Sub(x3, twoX)
-	x3.Mod(x3, secpP)
-	y3 := new(big.Int).Sub(x1, x3)
-	y3.Mul(lam, y3)
-	y3.Sub(y3, y1)
-	y3.Mod(y3, secpP)
-	return x3, y3
-}
-
-func pointAdd(x1, y1, x2, y2 *big.Int) (*big.Int, error) {
-	x, _ := pointAddFull(x1, y1, x2, y2)
-	if x == nil {
-		return nil, nil
-	}
-	return x, nil
-}
-func pointAddFull(x1, y1, x2, y2 *big.Int) (*big.Int, *big.Int) {
-	if x1 == nil {
-		if x2 == nil {
-			return nil, nil
-		}
-		return new(big.Int).Set(x2), new(big.Int).Set(y2)
-	}
-	if x2 == nil {
-		return new(big.Int).Set(x1), new(big.Int).Set(y1)
-	}
-	if x1.Cmp(x2) == 0 {
-		if y1.Cmp(y2) == 0 {
-			return pointDouble(x1, y1)
-		}
-		return nil, nil
-	}
-	num := new(big.Int).Sub(y2, y1)
-	num.Mod(num, secpP)
-	den := new(big.Int).Sub(x2, x1)
-	den.Mod(den, secpP)
-	den.ModInverse(den, secpP)
-	lam := new(big.Int).Mul(num, den)
-	lam.Mod(lam, secpP)
-	x3 := new(big.Int).Mul(lam, lam)
-	x3.Sub(x3, x1)
-	x3.Sub(x3, x2)
-	x3.Mod(x3, secpP)
-	y3 := new(big.Int).Sub(x1, x3)
-	y3.Mul(lam, y3)
-	y3.Sub(y3, y1)
-	y3.Mod(y3, secpP)
-	return x3, y3
-}
-
-func isOnCurve(x, y *big.Int) bool {
-	if x.Sign() < 0 || x.Cmp(secpP) >= 0 || y.Sign() < 0 || y.Cmp(secpP) >= 0 {
-		return false
-	}
-	lhs := new(big.Int).Mul(y, y)
-	lhs.Mod(lhs, secpP)
-	rhs := new(big.Int).Mul(x, x)
-	rhs.Mul(rhs, x)
-	rhs.Add(rhs, big.NewInt(7))
-	rhs.Mod(rhs, secpP)
-	return lhs.Cmp(rhs) == 0
+	key := secp256k1.PrivKeyFromBytes(priv)
+	defer key.Zero()
+	hash := SHA256Bytes([]byte(message))
+	sig := secp256k1ecdsa.Sign(key, hash[:])
+	var rBytes, sBytes [32]byte
+	rScalar := sig.R()
+	sScalar := sig.S()
+	rScalar.PutBytes(&rBytes)
+	sScalar.PutBytes(&sBytes)
+	out := make([]byte, 64)
+	copy(out[:32], rBytes[:])
+	copy(out[32:], sBytes[:])
+	return out, nil
 }
