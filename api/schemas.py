@@ -162,18 +162,29 @@ class PeerOut(BaseModel):
     last_seen: Optional[float] = None
     registered_at: Optional[float] = None
     trusted: bool = False
+    failure_count: int = 0
+    backoff_until: Optional[float] = None
+    capabilities: list[str] = Field(default_factory=list)
 
 
 class NetworkStatusResponse(BaseModel):
-    """This node's networking status summary."""
+    """Observable, non-sensitive node/network status."""
 
     node_id: str
     self_address: str
     public_key: str
     peer_count: int
+    healthy_peer_count: int = 0
     chain_length: int
     chain_work: int
     network_name: str
+    chain_id: int = 1
+    lifecycle: str = "STARTING"
+    sync_state: str = "STARTING"
+    mempool_size: int = 0
+    current_difficulty: int = 0
+    total_supply_base_units: int = 0
+    propagation: dict = Field(default_factory=dict)
 
 
 class PeerListResponse(BaseModel):

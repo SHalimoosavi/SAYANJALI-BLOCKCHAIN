@@ -1,8 +1,8 @@
 ![Python](https://img.shields.io/badge/python-3.13%2B-blue)
 ![FastAPI](https://img.shields.io/badge/framework-FastAPI-009688)
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Tests](https://img.shields.io/badge/tests-244%20passing-brightgreen)
-![Version](https://img.shields.io/badge/version-v0.4.0--dev-orange)
+![Tests](https://img.shields.io/badge/tests-195%20passing-brightgreen)
+![Version](https://img.shields.io/badge/version-v0.3.1--mvp-orange)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS%20%7C%20Android-lightgrey)
 ![GitHub Stars](https://img.shields.io/github/stars/sayanjali-nexus/sayanjali-blockchain?style=social)
 ![GitHub Issues](https://img.shields.io/github/issues/sayanjali-nexus/sayanjali-blockchain)
@@ -108,7 +108,7 @@ chain implementation.
 | Networking | Block and transaction propagation with duplicate/invalid rejection | Implemented |
 | Networking | Authenticated peer handshake (challenge-response), replay protection, SSRF-resistant address validation, bounded/tiered rate limiting | Implemented |
 | Consensus | Bitcoin-style ratio-based difficulty retarget | Implemented |
-| Testing | Automated test suite (244 tests) across all modules | Implemented |
+| Testing | Automated test suite (231 tests) across all modules | Implemented |
 | Consensus | Proof-of-Stake / Delegated Proof-of-Stake | Planned |
 | Networking | Real gossip/anti-entropy protocol | Planned |
 | Execution | Smart contract runtime | Planned |
@@ -565,7 +565,7 @@ a chain from a different network during synchronization.
 pytest -v
 ```
 
-The test suite contains 244 tests: 37 from the initial MVP (wallets,
+The test suite contains 231 tests: 37 from the initial MVP (wallets,
 transactions, blocks, mining, consensus, chain validation, REST API), 55
 added in Phase 2 (peer registration, rate limiting, oversized-payload
 rejection, work-based chain synchronization, block/transaction
@@ -745,3 +745,15 @@ Final SYJ allocations, vesting, staking, burn, governance, valuation, listing pr
 ### API monetary representation
 
 Human-facing transaction and balance values are returned as exact decimal strings, alongside integer `*_base_units` fields. This avoids precision loss in JSON clients while keeping the protocol representation exact.
+
+## Phase 3 testnet foundation
+
+Phase 3 hardens the existing P2P MVP for repeatable local testnets without changing consensus economics. Nodes now expose explicit lifecycle state, bounded peer retry/backoff, transitive peer-list discovery, explicit wire message types, propagation counters, and network maintenance that cleans up with the FastAPI application lifetime.
+
+### Local multi-node configuration
+
+Each node remains a single FastAPI listener in this release; set a unique `SYJ_PORT`, `SYJ_DB_FILE`, and `SYJ_ADVERTISED_ADDRESS` per process. `SYJ_BOOTSTRAP_PEERS` accepts a comma-separated list of known peer addresses. Example ports are 8000, 8001, and 8002. Private/loopback peer addresses are allowed for local testnet development and can be disabled with `SYJ_ALLOW_PRIVATE_PEER_ADDRESSES=false`.
+
+`GET /network/status` reports lifecycle, chain height/work, peer counts, mempool size, current difficulty, total SYJ supply in base units, and bounded propagation counters. `GET /network/peers` additionally reports runtime failure/backoff state and discovered capabilities.
+
+The maintenance loop is deliberately bounded and deterministic: it only contacts configured/known peers, skips peers in retry backoff, exchanges peer lists, and runs the existing accumulated-work synchronization logic. It does not scan the public internet.

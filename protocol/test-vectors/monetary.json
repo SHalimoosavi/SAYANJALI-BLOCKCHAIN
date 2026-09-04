@@ -1,0 +1,63 @@
+{
+  "base_units_per_syj": 100000000,
+  "cases": [
+    {
+      "base_units": [
+        100000000,
+        5000000000,
+        1,
+        72000000000000000
+      ],
+      "inputs": [
+        "1",
+        "50.0",
+        "0.00000001",
+        "720000000"
+      ],
+      "name": "conversion",
+      "round_trip": [
+        "1",
+        "50",
+        "1E-8",
+        "720000000"
+      ]
+    },
+    {
+      "base_units": 123456789,
+      "formatted": "1.23456789",
+      "name": "format_amount"
+    },
+    {
+      "balances": {
+        "SYJ2222222222222222222222222222222222222222": 5000000000
+      },
+      "name": "single_reward_issuance",
+      "reason": "",
+      "total_supply": 5000000000
+    },
+    {
+      "name": "maximum_supply_boundary",
+      "reason": "",
+      "total_supply": 72000000000000000
+    },
+    {
+      "name": "post_exhaustion_issuance_rejected",
+      "reason": "Coinbase reward does not match protocol reward or remaining supply."
+    },
+    {
+      "name": "insufficient_balance_rejected",
+      "reason": "Each non-genesis block must contain exactly one coinbase."
+    },
+    {
+      "name": "invalid_conversion_over_supply",
+      "reason": "SYJ amount exceeds the maximum SYJ supply.",
+      "valid": false
+    }
+  ],
+  "default_block_reward_base_units": 5000000000,
+  "default_block_reward_syj": "50",
+  "max_supply_base_units": 72000000000000000,
+  "max_supply_syj": "720000000",
+  "symbol": "SYJ",
+  "vector_format_version": 1
+}

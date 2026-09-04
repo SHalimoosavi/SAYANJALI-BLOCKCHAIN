@@ -287,6 +287,12 @@ class P2PConfig:
     max_request_body_bytes: int = field(
         default_factory=lambda: _env_int("SYJ_MAX_REQUEST_BODY_BYTES", 1_048_576)
     )
+    maintenance_interval_seconds: float = field(
+        default_factory=lambda: float(_env_str("SYJ_NETWORK_MAINTENANCE_INTERVAL", "15.0"))
+    )
+    max_peer_failures: int = field(
+        default_factory=lambda: _env_int("SYJ_MAX_PEER_FAILURES", 8)
+    )
     rate_limit_max_keys: int = field(
         default_factory=lambda: _env_int("SYJ_RATE_LIMIT_MAX_KEYS", 10000)
     )

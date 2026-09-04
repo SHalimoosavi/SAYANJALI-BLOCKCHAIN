@@ -6,7 +6,7 @@
 pytest -v
 ```
 
-244 tests currently cover wallets, transactions, blocks, mining/consensus
+231 tests currently cover wallets, transactions, blocks, mining/consensus
 (including the Phase 7 ratio-based difficulty retarget and Phase 1's
 independent difficulty/coinbase/mempool enforcement), chain validation,
 P2P networking and authentication, and the full REST API surface (via
@@ -84,4 +84,10 @@ endpoints interactively via Swagger UI.
 
 `tests/test_native_asset.py` covers base-unit precision, conversion, malformed amounts, maximum-supply constants, and transaction round-trips. `tests/test_supply_invariant.py` covers cumulative issuance, excessive coinbase rejection, unfunded transfers, and deterministic reward capping at the remaining supply.
 
-The full suite for this development checkpoint completed with 244 passing tests on the native Termux development environment with the project's declared dependencies. This native run is the authoritative release verification for the checkpoint.
+The full suite for this development checkpoint completed with 244 passing tests in an isolated test environment using the project's interfaces. The runtime used for this audit did not have the declared `ecdsa` package available, so the execution used a temporary test-only compatibility shim; the project source and `requirements.txt` were not changed to add that shim. A native Termux run with the declared dependencies remains the authoritative release verification.
+
+## Phase 3 testnet acceptance
+
+Phase 3 adds focused lifecycle/peer-health/protocol tests and a real three-process local testnet scenario. The three-node test verifies transitive discovery, authenticated peer links, transaction propagation through an intermediate node, block propagation, chain-tip/work convergence, balance convergence, and the 720,000,000 SYJ supply ceiling.
+
+The local testnet uses isolated SQLite databases and independent HTTP ports, so it does not modify a developer's chain database.

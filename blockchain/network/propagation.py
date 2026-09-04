@@ -132,15 +132,18 @@ def broadcast_block(
     for address in node.peers.addresses():
         if address == exclude_address:
             continue
-        if not node.is_trusted_peer(address):
+        if not node.is_trusted_peer(address) or not node.peers.is_eligible(address):
             continue
         auth_envelope = build_auth_envelope(node.auth_context, block_dict)
         result = node.client.send_block(address, block_dict, node.self_address, auth_envelope)
         if result is not None:
+            node.peers.mark_seen(address, "online")
             acknowledged.append(address)
         else:
+            node.peers.mark_failure(address)
             logger.info("Block %s propagation to %s failed.", block.hash, address)
 
+    node.record_propagation("blocks", sent=len(acknowledged))
     return acknowledged
 
 
@@ -159,19 +162,22 @@ def broadcast_transaction(
     for address in node.peers.addresses():
         if address == exclude_address:
             continue
-        if not node.is_trusted_peer(address):
+        if not node.is_trusted_peer(address) or not node.peers.is_eligible(address):
             continue
         auth_envelope = build_auth_envelope(node.auth_context, tx_dict)
         result = node.client.send_transaction(
             address, tx_dict, node.self_address, auth_envelope
         )
         if result is not None:
+            node.peers.mark_seen(address, "online")
             acknowledged.append(address)
         else:
+            node.peers.mark_failure(address)
             logger.info(
                 "Transaction %s propagation to %s failed.", transaction.tx_hash, address
             )
 
+    node.record_propagation("transactions", sent=len(acknowledged))
     return acknowledged
 
 
@@ -244,6 +250,9 @@ def receive_block(
             [tx.tx_hash for tx in block.transactions]
         )
 
+    node.record_propagation("blocks", received=1)
+    if from_peer:
+        node.peers.mark_seen(from_peer, "online")
     logger.info(
         "Accepted block %s from peer %s (extends tip)", block.hash, from_peer
     )
@@ -290,6 +299,9 @@ def receive_transaction(
     if not accepted:
         return False, reason, False
 
+    node.record_propagation("transactions", received=1)
+    if from_peer:
+        node.peers.mark_seen(from_peer, "online")
     logger.info(
         "Accepted transaction %s from peer %s", transaction.tx_hash, from_peer
     )

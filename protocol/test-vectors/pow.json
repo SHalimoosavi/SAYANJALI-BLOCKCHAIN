@@ -1,0 +1,26 @@
+{
+  "cases": [
+    {
+      "difficulty": 0,
+      "hash": "0006a629e38c6bcf46538f894d7a47ccb7790b9548399478fe06d0773f2ed178",
+      "meets_difficulty": true
+    },
+    {
+      "difficulty": 1,
+      "hash": "0006a629e38c6bcf46538f894d7a47ccb7790b9548399478fe06d0773f2ed178",
+      "meets_difficulty": true
+    },
+    {
+      "difficulty": 2,
+      "hash": "0006a629e38c6bcf46538f894d7a47ccb7790b9548399478fe06d0773f2ed178",
+      "meets_difficulty": true
+    },
+    {
+      "difficulty": 3,
+      "hash": "0006a629e38c6bcf46538f894d7a47ccb7790b9548399478fe06d0773f2ed178",
+      "meets_difficulty": true
+    }
+  ],
+  "rule": "hash starts with difficulty count of hexadecimal '0' characters",
+  "vector_format_version": 1
+}

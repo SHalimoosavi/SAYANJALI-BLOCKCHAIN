@@ -89,8 +89,14 @@ def _block_to_out(block) -> BlockOut:
 
 @router.get("/health", response_model=HealthResponse, tags=["system"])
 def health() -> HealthResponse:
-    """Liveness probe. Always returns ok if the process is running."""
-    return HealthResponse()
+    """Return process liveness plus NetworkNode readiness/lifecycle."""
+    from api.network_routes import get_network_node
+    node = get_network_node()
+    return HealthResponse(
+        status="ok",
+        lifecycle=node.lifecycle.value,
+        ready=node.lifecycle.value == "RUNNING",
+    )
 
 
 @router.get("/status", response_model=StatusResponse, tags=["system"])

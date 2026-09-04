@@ -98,3 +98,9 @@ The genesis block is deterministic (fixed timestamp, nonce, and message in
 repo should always produce an identical genesis hash. If they differ, check
 whether `GenesisConfig` was edited locally, or whether an environment
 variable is overriding a genesis-related setting.
+
+## Phase 3 local testnet troubleshooting
+
+For multiple local nodes, give every process a unique `SYJ_PORT`, `SYJ_DB_FILE`, and `SYJ_ADVERTISED_ADDRESS`. Use `SYJ_BOOTSTRAP_PEERS` only for explicit bootstrap addresses; discovery does not perform unrestricted network scanning.
+
+If a peer temporarily disappears, `GET /network/peers` shows its failure counter and retry backoff. The node will retry after the bounded backoff instead of creating an unbounded reconnect loop. Check `GET /network/status` for lifecycle and synchronization state.

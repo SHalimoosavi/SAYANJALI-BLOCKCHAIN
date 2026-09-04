@@ -1,0 +1,23 @@
+{
+  "canonical_header_json": "{\"difficulty\":2,\"index\":1,\"merkle_root\":\"e59bd734b2735119c8acbc01133782aa7b80632c4ddc1252f999a8a4161caef1\",\"nonce\":104,\"previous_hash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"timestamp\":1735689631.25}",
+  "canonical_header_utf8_hex": "7b22646966666963756c7479223a322c22696e646578223a312c226d65726b6c655f726f6f74223a2265353962643733346232373335313139633861636263303131333337383261613762383036333263346464633132353266393939613861343136316361656631222c226e6f6e6365223a3130342c2270726576696f75735f68617368223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c2274696d657374616d70223a313733353638393633312e32357d",
+  "expected_block_hash": "0006a629e38c6bcf46538f894d7a47ccb7790b9548399478fe06d0773f2ed178",
+  "header_fields": [
+    "index",
+    "previous_hash",
+    "timestamp",
+    "nonce",
+    "difficulty",
+    "merkle_root"
+  ],
+  "header_payload": {
+    "difficulty": 2,
+    "index": 1,
+    "merkle_root": "e59bd734b2735119c8acbc01133782aa7b80632c4ddc1252f999a8a4161caef1",
+    "nonce": 104,
+    "previous_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "timestamp": 1735689631.25
+  },
+  "merkle_root": "e59bd734b2735119c8acbc01133782aa7b80632c4ddc1252f999a8a4161caef1",
+  "vector_format_version": 1
+}
