@@ -10,7 +10,7 @@ The production network stack is layered as:
 
 `TCP transport → fixed frame → envelope/header semantics → message payload → message validation → node handler`
 
-TCP is a byte stream; it does not provide message boundaries. The wire layer provides those boundaries. Consensus serialization remains a separate concern. Consensus objects carried by this protocol are opaque UTF-8 byte strings whose contents MUST be produced/consumed by the frozen consensus implementation.
+TCP is a byte stream; it does not provide message boundaries. The wire layer provides those boundaries. Consensus serialization remains a separate concern. Consensus objects carried by this protocol are opaque consensus-encoded byte sequences whose contents MUST be produced/consumed by the frozen consensus implementation.
 
 The legacy Python HTTP network remains reference/prototype behavior. It is not wire-compatible with this protocol.
 

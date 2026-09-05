@@ -392,6 +392,9 @@ func DecodeBlocks(f Frame) (Blocks, error) {
 	return v, nil
 }
 func EncodeNewBlock(v NewBlock, req uint64) ([]byte, error) {
+	if req != 0 {
+		return nil, ErrInvalidRequestID
+	}
 	var w writer
 	w.raw(v.Block, MaxBlockPayload)
 	return wrap(NEW_BLOCK, req, w.Bytes())
@@ -399,6 +402,9 @@ func EncodeNewBlock(v NewBlock, req uint64) ([]byte, error) {
 func DecodeNewBlock(f Frame) (NewBlock, error) {
 	if f.Type != NEW_BLOCK {
 		return NewBlock{}, ErrMalformedPayload
+	}
+	if f.RequestID != 0 {
+		return NewBlock{}, ErrInvalidRequestID
 	}
 	r := reader{r: bytes.NewReader(f.Payload)}
 	v := NewBlock{Block: r.raw(MaxBlockPayload)}
@@ -408,6 +414,9 @@ func DecodeNewBlock(f Frame) (NewBlock, error) {
 	return v, nil
 }
 func EncodeNewTransaction(v NewTransaction, req uint64) ([]byte, error) {
+	if req != 0 {
+		return nil, ErrInvalidRequestID
+	}
 	var w writer
 	w.raw(v.Transaction, MaxTransactionPayload)
 	return wrap(NEW_TRANSACTION, req, w.Bytes())
@@ -415,6 +424,9 @@ func EncodeNewTransaction(v NewTransaction, req uint64) ([]byte, error) {
 func DecodeNewTransaction(f Frame) (NewTransaction, error) {
 	if f.Type != NEW_TRANSACTION {
 		return NewTransaction{}, ErrMalformedPayload
+	}
+	if f.RequestID != 0 {
+		return NewTransaction{}, ErrInvalidRequestID
 	}
 	r := reader{r: bytes.NewReader(f.Payload)}
 	v := NewTransaction{Transaction: r.raw(MaxTransactionPayload)}

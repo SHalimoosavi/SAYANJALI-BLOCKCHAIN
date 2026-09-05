@@ -82,7 +82,11 @@ func TestAllMessagesRoundTrip(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			b, e := tc.enc(42)
+			req := uint64(42)
+			if tc.typ == NEW_BLOCK || tc.typ == NEW_TRANSACTION {
+				req = 0
+			}
+			b, e := tc.enc(req)
 			if e != nil {
 				t.Fatal(e)
 			}
@@ -99,8 +103,43 @@ func TestAllMessagesRoundTrip(t *testing.T) {
 		})
 	}
 }
+func TestPropagationRejectsNonZeroRequestID(t *testing.T) {
+	if _, err := EncodeNewBlock(NewBlock{[]byte("x")}, 1); err != ErrInvalidRequestID {
+		t.Fatalf("EncodeNewBlock error = %v, want ErrInvalidRequestID", err)
+	}
+	if _, err := EncodeNewTransaction(NewTransaction{[]byte("x")}, 1); err != ErrInvalidRequestID {
+		t.Fatalf("EncodeNewTransaction error = %v, want ErrInvalidRequestID", err)
+	}
+
+	blockBytes, err := EncodeNewBlock(NewBlock{[]byte("x")}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blockFrame, err := DecodeFrame(blockBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blockFrame.RequestID = 1
+	if _, err := DecodeNewBlock(blockFrame); err != ErrInvalidRequestID {
+		t.Fatalf("DecodeNewBlock error = %v, want ErrInvalidRequestID", err)
+	}
+
+	txBytes, err := EncodeNewTransaction(NewTransaction{[]byte("x")}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	txFrame, err := DecodeFrame(txBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	txFrame.RequestID = 1
+	if _, err := DecodeNewTransaction(txFrame); err != ErrInvalidRequestID {
+		t.Fatalf("DecodeNewTransaction error = %v, want ErrInvalidRequestID", err)
+	}
+}
+
 func TestReaderConsumesExactlyOneFrame(t *testing.T) {
-	b, _ := EncodeNewTransaction(NewTransaction{[]byte("x")}, 1)
+	b, _ := EncodeNewTransaction(NewTransaction{[]byte("x")}, 0)
 	r := bytes.NewBuffer(append(b, b...))
 	_, e := ReadFrame(r)
 	if e != nil {
