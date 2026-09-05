@@ -108,19 +108,21 @@ protocol change.
 ## Networking gaps
 
 ### G-014 --- Production wire protocol
-
 **Severity:** Critical\
-**Status:** Open\
-The current HTTP API is a prototype P2P transport. Final framing,
-message grammar, request IDs, limits and compatibility rules are not
-normative.
+**Status:** Resolved / Frozen\
+The production `sayanjali-p2p` v1.0 framing, message grammar, request
+correlation, handshake, synchronization messages, limits and rejection
+registry are frozen in `protocol/p2p-wire-spec.md`. The standalone Go
+codec and deterministic wire fixtures are under `internal/p2p/` and
+`tests/p2p`.
 
 ### G-015 --- Incremental synchronization
 
 **Severity:** High\
-**Status:** Open\
-Current synchronization is full-chain. Production sync needs an explicit
-headers/blocks strategy before scale testing.
+**Status:** Open / Implementation pending\
+Production synchronization is not implemented in the node yet. The v1.0
+wire contract now defines bounded locator-based headers exchange and
+block retrieval for the future Phase 6 sync engine.
 
 ### G-016 --- Peer reputation
 
