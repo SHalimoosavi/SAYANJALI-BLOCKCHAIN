@@ -1,0 +1,63 @@
+SAYANJALI BLOCKCHAIN — PHASE 5.2 P2P WIRE PROTOCOL FREEZE
+Baseline: main @ 42ed3d00fd77a37366b45d1b5c07fa1e4b8751c0
+Branch target: phase-5-p2p-wire-protocol
+Scope: production P2P wire grammar + standalone codec/tests only
+Consensus changes: NONE
+Phase 6 node: NOT INCLUDED
+
+NEW/UPDATED FILES
+protocol/p2p-wire-spec.md
+internal/p2p/wire.go
+internal/p2p/messages.go
+internal/p2p/handshake.go
+internal/p2p/request_tracker.go
+internal/p2p/session.go
+internal/p2p/wire_test.go
+internal/p2p/security_test.go
+tests/p2p/reference_codec.py
+tests/p2p/test_reference_codec.py
+tests/p2p/fixture_test.go
+tests/p2p/fixture_payload_test.go
+tests/p2p/max_payload_test.go
+tests/p2p/fixtures/valid.json
+tests/p2p/fixtures/valid_maximal_counts.json
+tests/p2p/fixtures/valid_max_payload.json
+tests/p2p/fixtures/invalid.json
+tests/p2p/fixtures/invalid_payload.json
+docs/ADR/0011-production-p2p-wire-protocol.md
+docs/PROTOCOL_GAPS.md
+
+VALIDATION ENVIRONMENTS
+Clean Linux/container validation:
+Go targeted tests: PASS
+go test -race ./internal/p2p ./tests/p2p: PASS
+go vet ./internal/p2p ./tests/p2p: PASS
+gofmt: CLEAN
+Python reference fixture test: PASS
+Frame fuzz (2s): PASS, 238031 executions
+Message fuzz (2s): PASS, 103994 executions
+
+Final Termux Android/ARM64 validation:
+go test ./...: PASS
+go vet ./...: PASS
+go build ./...: PASS
+Python reference fixture test: PASS
+git diff --check: PASS
+Phase 4 immutability check: PASS
+Forbidden artifact scan: PASS
+Go -race is unsupported on the Termux Android/ARM64 environment and was not claimed there.
+
+FULL REPOSITORY TEST NOTE
+The final full-repository validation was completed in the Termux Android/ARM64 environment. The race detector is the only unavailable validation because Go does not support -race on this target.
+
+FROZEN PHASE 4 FILE CHECK
+protocol/SYJ_PROTOCOL_SPEC.md blob SHA: 517099befb3dd5b4ae9a49f2a7db59867b1eca29
+address.json: 2462a118e8dac7a595b08bde2a01074a14ae568b
+block.json: 23e819c39981c2fa1990f58050cea1d1633da9ad
+chain_work.json: d7a0fa530d330bbf8eaa01f72d49a2c369654345
+difficulty.json: 8a1490309c431c1db6f049554620f721194ec85b
+genesis.json: 65c6bdeb1ee552102d9a17e6124c015ed624456a
+merkle.json: d75f77572fd93c7b444418820c585328f0d990f5
+monetary.json: 06e670c263d0def2be39b7cf47d0fad13920ad8b
+pow.json: b3bab761ee3179c708c2072621b8c9c2ec987315
+transaction.json: 3bd28f88914ad2683bbff342808c3dd353f2f483

@@ -23,6 +23,54 @@ import (
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/pkg/protocol"
 )
 
+func concreteProtocolValues(v any) any {
+	switch x := v.(type) {
+	case json.Number:
+		raw := string(x)
+
+		if strings.ContainsAny(raw, ".eE") {
+			f, err := strconv.ParseFloat(raw, 64)
+			if err != nil {
+				panic(err)
+			}
+			return f
+		}
+
+		if strings.HasPrefix(raw, "-") {
+			if i, err := strconv.ParseInt(raw, 10, 64); err == nil {
+				return i
+			}
+		} else {
+			if u, err := strconv.ParseUint(raw, 10, 64); err == nil {
+				return u
+			}
+		}
+
+		n := new(big.Int)
+		if _, ok := n.SetString(raw, 10); !ok {
+			panic("invalid JSON integer: " + raw)
+		}
+		return n
+
+	case map[string]any:
+		out := make(map[string]any, len(x))
+		for k, value := range x {
+			out[k] = concreteProtocolValues(value)
+		}
+		return out
+
+	case []any:
+		out := make([]any, len(x))
+		for i, value := range x {
+			out[i] = concreteProtocolValues(value)
+		}
+		return out
+
+	default:
+		return v
+	}
+}
+
 func vector(t *testing.T, name string) map[string]any {
 	t.Helper()
 	b, err := os.ReadFile(filepath.Join("..", "..", "protocol", "test-vectors", name+".json"))
@@ -35,77 +83,78 @@ func vector(t *testing.T, name string) map[string]any {
 	if err = dec.Decode(&v); err != nil {
 		t.Fatal(err)
 	}
-	return v
-}
-func s(v any) string { return v.(string) }
-func f(v any) float64 {
-	n := v.(json.Number)
-	x, e := n.Float64()
-	if e != nil {
-		panic(e)
-	}
-	return x
-}
-func ii(v any) int {
-	n := v.(json.Number)
-	x, e := n.Int64()
-	if e != nil {
-		panic(e)
-	}
-	return int(x)
-}
-func u64(v any) uint64 {
-	n := v.(json.Number)
-	x, e := strconv.ParseUint(string(n), 10, 64)
-	if e != nil {
-		panic(e)
-	}
-	return x
+	return concreteProtocolValues(v).(map[string]any)
 }
 
-func concreteProtocolValues(v any) any {
+func s(v any) string { return v.(string) }
+
+func f(v any) float64 {
 	switch x := v.(type) {
+	case float64:
+		return x
+	case float32:
+		return float64(x)
+	case uint64:
+		return float64(x)
+	case uint32:
+		return float64(x)
+	case uint:
+		return float64(x)
+	case int64:
+		return float64(x)
+	case int:
+		return float64(x)
+	case *big.Int:
+		f, _ := new(big.Float).SetInt(x).Float64()
+		return f
 	case json.Number:
-		raw := string(x)
-		if strings.ContainsAny(raw, ".eE") {
-			f, err := strconv.ParseFloat(raw, 64)
-			if err != nil {
-				panic(err)
-			}
-			return f
-		}
-		if strings.HasPrefix(raw, "-") {
-			i, err := strconv.ParseInt(raw, 10, 64)
-			if err != nil {
-				panic(err)
-			}
-			return i
-		}
-		u, err := strconv.ParseUint(raw, 10, 64)
+		n, err := strconv.ParseFloat(string(x), 64)
 		if err != nil {
 			panic(err)
 		}
-		return u
-	case []any:
-		out := make([]any, len(x))
-		for i, item := range x {
-			out[i] = concreteProtocolValues(item)
-		}
-		return out
-	case map[string]any:
-		out := make(map[string]any, len(x))
-		for k, item := range x {
-			out[k] = concreteProtocolValues(item)
-		}
-		return out
+		return n
 	default:
-		return v
+		panic("expected numeric float value")
+	}
+}
+
+func ii(v any) int {
+	switch n := v.(type) {
+	case uint64:
+		return int(n)
+	case float64:
+		return int(n)
+	case json.Number:
+		x, e := n.Int64()
+		if e != nil {
+			panic(e)
+		}
+		return int(x)
+	default:
+		panic("expected numeric integer value")
+	}
+}
+
+func u64(v any) uint64 {
+	switch n := v.(type) {
+	case uint64:
+		return n
+	case float64:
+		return uint64(n)
+	case json.Number:
+		x, e := strconv.ParseUint(string(n), 10, 64)
+		if e != nil {
+			panic(e)
+		}
+		return x
+	default:
+		panic("expected uint64 value")
 	}
 }
 
 func TestCanonicalGenesisHeader(t *testing.T) {
 	v := vector(t, "genesis")
-	in := concreteProtocolValues(v["header_payload"]).(map[string]any)
+	in := v["header_payload"].(map[string]any)
 	got, err := canonicaljson.String(in)
 	if err != nil {
 		t.Fatal(err)

@@ -1,0 +1,32 @@
+[
+  {
+    "name": "bad_magic",
+    "frame_hex": "00594a500100000300000000000000020000000400000100",
+    "error": "bad_magic"
+  },
+  {
+    "name": "unsupported_version",
+    "frame_hex": "53594a500200000300000000000000020000000400000100",
+    "error": "unsupported_version"
+  },
+  {
+    "name": "unknown_type",
+    "frame_hex": "53594a500100006300000000000000020000000400000100",
+    "error": "unknown_type"
+  },
+  {
+    "name": "zero_request_id",
+    "frame_hex": "53594a500100000300000000000000000000000400000100",
+    "error": "invalid_request_id"
+  },
+  {
+    "name": "truncated_payload",
+    "frame_hex": "53594a500100000300000000000000020000006400000100",
+    "error": "truncated"
+  },
+  {
+    "name": "oversized_length",
+    "frame_hex": "53594a500100000300000000000000020040000000000100",
+    "error": "frame_too_large"
+  }
+]
