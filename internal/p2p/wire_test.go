@@ -45,6 +45,33 @@ func TestFrameRejectsHugeLength(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+func TestFrameRejectsZeroRequestIDForNormalMessages(t *testing.T) {
+	for _, typ := range []MessageType{HELLO, GET_PEERS, GET_HEADERS, GET_BLOCKS, HELLO_ACK, PEERS, HEADERS, BLOCKS} {
+		if _, err := EncodeFrame(Frame{ProtocolMajor, ProtocolMinor, typ, 0, nil}); err != ErrInvalidRequestID {
+			t.Fatalf("EncodeFrame(%s, zero request id) error = %v, want ErrInvalidRequestID", typ, err)
+		}
+		valid, err := EncodeFrame(Frame{ProtocolMajor, ProtocolMinor, typ, 1, nil})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i := 8; i < 16; i++ {
+			valid[i] = 0
+		}
+		if _, err := DecodeFrame(valid); err != ErrInvalidRequestID {
+			t.Fatalf("DecodeFrame(%s, zero request id) error = %v, want ErrInvalidRequestID", typ, err)
+		}
+	}
+	if _, err := EncodeFrame(Frame{ProtocolMajor, ProtocolMinor, REJECT, 0, nil}); err != nil {
+		t.Fatalf("REJECT with zero request id must remain allowed: %v", err)
+	}
+	if _, err := EncodeFrame(Frame{ProtocolMajor, ProtocolMinor, NEW_BLOCK, 0, nil}); err != nil {
+		t.Fatalf("NEW_BLOCK with zero request id must remain allowed: %v", err)
+	}
+	if _, err := EncodeFrame(Frame{ProtocolMajor, ProtocolMinor, NEW_TRANSACTION, 0, nil}); err != nil {
+		t.Fatalf("NEW_TRANSACTION with zero request id must remain allowed: %v", err)
+	}
+}
+
 func TestAllMessagesRoundTrip(t *testing.T) {
 	var h [32]byte
 	for i := range h {

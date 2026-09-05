@@ -27,7 +27,8 @@ tests/p2p/fixtures/invalid_payload.json
 docs/ADR/0011-production-p2p-wire-protocol.md
 docs/PROTOCOL_GAPS.md
 
-VALIDATION IN THIS BUILD ENVIRONMENT
+VALIDATION ENVIRONMENTS
+Clean Linux/container validation:
 Go targeted tests: PASS
 go test -race ./internal/p2p ./tests/p2p: PASS
 go vet ./internal/p2p ./tests/p2p: PASS
@@ -36,8 +37,18 @@ Python reference fixture test: PASS
 Frame fuzz (2s): PASS, 238031 executions
 Message fuzz (2s): PASS, 103994 executions
 
+Final Termux Android/ARM64 validation:
+go test ./...: PASS
+go vet ./...: PASS
+go build ./...: PASS
+Python reference fixture test: PASS
+git diff --check: PASS
+Phase 4 immutability check: PASS
+Forbidden artifact scan: PASS
+Go -race is unsupported on the Termux Android/ARM64 environment and was not claimed there.
+
 FULL REPOSITORY TEST NOTE
-The isolated P2P package has no external dependencies and was fully tested above. A full repository go test cannot be truthfully reported from this environment because the Decred secp256k1 module is not cached and outbound module download is blocked. The existing Python suite also requires the repository's Python dependencies, which are not installed in this environment. No full-suite pass is claimed.
+The final full-repository validation was completed in the Termux Android/ARM64 environment. The race detector is the only unavailable validation because Go does not support -race on this target.
 
 FROZEN PHASE 4 FILE CHECK
 protocol/SYJ_PROTOCOL_SPEC.md blob SHA: 517099befb3dd5b4ae9a49f2a7db59867b1eca29
