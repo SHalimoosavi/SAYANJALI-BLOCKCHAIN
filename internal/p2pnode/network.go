@@ -21,32 +21,51 @@ import (
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/identity"
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/mempool"
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/p2p"
+	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/security"
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/transaction"
 )
 
 type Config struct {
-	NetworkName       string
-	GenesisHash       string
-	NodeID            string
-	PublicKeyHex      string
-	AdvertisedAddress string
-	ListenAddress     string
-	Seeds             []string
-	MaxPeers          int
-	Logger            *slog.Logger
-	Identity          identity.Identity
+	NetworkName          string
+	GenesisHash          string
+	NodeID               string
+	PublicKeyHex         string
+	AdvertisedAddress    string
+	ListenAddress        string
+	Seeds                []string
+	MaxPeers             int
+	MaxPendingHandshakes int
+	MaxHandshakesPerIP   int
+	PeerMessageRate      float64
+	PeerMessageBurst     int
+	Logger               *slog.Logger
+	AddressPolicyMode    security.NetworkMode
+	AllowLoopback        bool
+	AllowPrivate         bool
+	AllowLinkLocal       bool
+	AllowUnspecified     bool
+	AllowMulticast       bool
+	AllowDNS             bool
+	Identity             identity.Identity
 }
 type Network struct {
-	cfg     Config
-	ch      *chain.Chain
-	pool    *mempool.Pool
-	ln      net.Listener
-	ctx     context.Context
-	cancel  context.CancelFunc
-	wg      sync.WaitGroup
-	mu      sync.RWMutex
-	peers   map[string]*Peer
-	nextReq atomic.Uint64
+	cfg             Config
+	ch              *chain.Chain
+	pool            *mempool.Pool
+	ln              net.Listener
+	ctx             context.Context
+	cancel          context.CancelFunc
+	wg              sync.WaitGroup
+	mu              sync.RWMutex
+	peers           map[string]*Peer
+	nextReq         atomic.Uint64
+	handshakeReplay *security.ReplayCache
+	reputation      *security.Reputation
+
+	admissionMu       sync.Mutex
+	pendingHandshakes int
+	handshakesByIP    map[string]int
+	addressPolicy     security.AddressPolicy
 }
 type Peer struct {
 	ID           string
@@ -57,25 +76,155 @@ type Peer struct {
 	Session      *Session
 }
 type Session struct {
-	n         *Network
-	p         *Peer
-	conn      net.Conn
-	tracker   *p2p.RequestTracker
-	pendingMu sync.Mutex
-	pending   map[uint64]chan p2p.Frame
-	writeMu   sync.Mutex
-	closed    chan struct{}
+	n            *Network
+	p            *Peer
+	conn         net.Conn
+	tracker      *p2p.RequestTracker
+	pendingMu    sync.Mutex
+	pending      map[uint64]chan p2p.Frame
+	writeMu      sync.Mutex
+	closed       chan struct{}
+	messageLimit *security.TokenBucket
 }
 
 func New(cfg Config, ch *chain.Chain, pool *mempool.Pool) *Network {
 	if cfg.MaxPeers < 1 {
 		cfg.MaxPeers = 32
 	}
+	if cfg.MaxPendingHandshakes < 1 {
+		cfg.MaxPendingHandshakes = cfg.MaxPeers * 2
+	}
+	if cfg.MaxHandshakesPerIP < 1 {
+		cfg.MaxHandshakesPerIP = 4
+	}
+	if cfg.PeerMessageRate <= 0 {
+		cfg.PeerMessageRate = 100
+	}
+	if cfg.PeerMessageBurst < 1 {
+		cfg.PeerMessageBurst = 256
+	}
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
-	return &Network{cfg: cfg, ch: ch, pool: pool, peers: make(map[string]*Peer)}
+
+	if cfg.AddressPolicyMode == "" {
+		cfg.AddressPolicyMode = security.PrivateTestnet
+	}
+
+	policy := security.DefaultAddressPolicy(cfg.AddressPolicyMode)
+	if cfg.AllowLoopback {
+		policy.AllowLoopback = true
+	}
+	if cfg.AllowPrivate {
+		policy.AllowPrivate = true
+	}
+	if cfg.AllowLinkLocal {
+		policy.AllowLinkLocal = true
+	}
+	if cfg.AllowUnspecified {
+		policy.AllowUnspecified = true
+	}
+	if cfg.AllowMulticast {
+		policy.AllowMulticast = true
+	}
+	if cfg.AllowDNS {
+		policy.AllowDNS = true
+	}
+
+	replay, err := security.NewReplayCache(4096, 10*time.Minute)
+	if err != nil {
+		panic("invalid handshake replay cache configuration: " + err.Error())
+	}
+
+	reputation, err := security.NewReputation(
+		4096,
+		3,
+		6,
+		5*time.Minute,
+		30*time.Minute,
+	)
+	if err != nil {
+		panic("invalid reputation configuration: " + err.Error())
+	}
+
+	return &Network{
+		cfg:             cfg,
+		ch:              ch,
+		pool:            pool,
+		peers:           make(map[string]*Peer),
+		handshakeReplay: replay,
+		reputation:      reputation,
+		handshakesByIP:  make(map[string]int),
+		addressPolicy:   policy,
+	}
 }
+func (n *Network) recordReputationViolation(
+	peerID, address string,
+	severity security.ViolationSeverity,
+) security.PeerState {
+	if n == nil || n.reputation == nil {
+		return security.PeerGood
+	}
+	return n.reputation.Violate(peerID, address, severity, time.Now())
+}
+
+func remoteIP(addr net.Addr) string {
+	if addr == nil {
+		return ""
+	}
+
+	host, _, err := net.SplitHostPort(addr.String())
+	if err == nil {
+		return host
+	}
+
+	return addr.String()
+}
+
+func (n *Network) acquireHandshake(addr net.Addr) error {
+	ip := remoteIP(addr)
+
+	n.admissionMu.Lock()
+	defer n.admissionMu.Unlock()
+
+	if n.pendingHandshakes >= n.cfg.MaxPendingHandshakes {
+		return security.ErrAdmissionLimited
+	}
+
+	if ip != "" && n.handshakesByIP[ip] >= n.cfg.MaxHandshakesPerIP {
+		return security.ErrAdmissionLimited
+	}
+
+	n.pendingHandshakes++
+
+	if ip != "" {
+		n.handshakesByIP[ip]++
+	}
+
+	return nil
+}
+
+func (n *Network) releaseHandshake(addr net.Addr) {
+	ip := remoteIP(addr)
+
+	n.admissionMu.Lock()
+	defer n.admissionMu.Unlock()
+
+	if n.pendingHandshakes > 0 {
+		n.pendingHandshakes--
+	}
+
+	if ip == "" {
+		return
+	}
+
+	if count := n.handshakesByIP[ip]; count <= 1 {
+		delete(n.handshakesByIP, ip)
+	} else {
+		n.handshakesByIP[ip] = count - 1
+	}
+}
+
 func (n *Network) Start(ctx context.Context) error {
 	n.ctx, n.cancel = context.WithCancel(ctx)
 	ln, err := net.Listen("tcp", n.cfg.ListenAddress)
@@ -95,6 +244,11 @@ func (n *Network) Start(ctx context.Context) error {
 			return fmt.Errorf("cannot derive advertised address from listener: %w", splitErr)
 		}
 		n.cfg.AdvertisedAddress = net.JoinHostPort("127.0.0.1", port)
+	}
+
+	if err := n.addressPolicy.Validate(n.cfg.AdvertisedAddress); err != nil {
+		_ = ln.Close()
+		return fmt.Errorf("invalid advertised address: %w", err)
 	}
 	n.wg.Add(1)
 	go n.acceptLoop()
@@ -163,8 +317,14 @@ func (n *Network) seedLoop(addr string) {
 			}
 			continue
 		}
-		c, err := net.DialTimeout("tcp", addr, 5*time.Second)
+		resolveCtx, cancel := context.WithTimeout(n.ctx, 5*time.Second)
+		endpoints, err := n.addressPolicy.ResolveAndValidate(resolveCtx, addr)
+		cancel()
 		if err != nil {
+			n.cfg.Logger.Warn("seed address rejected by policy",
+				"address", addr,
+				"error", err,
+			)
 			t := time.NewTimer(delay)
 			select {
 			case <-n.ctx.Done():
@@ -177,6 +337,29 @@ func (n *Network) seedLoop(addr string) {
 			}
 			continue
 		}
+
+		var c net.Conn
+		for _, endpoint := range endpoints {
+			c, err = net.DialTimeout("tcp", endpoint, 5*time.Second)
+			if err == nil {
+				break
+			}
+			c = nil
+		}
+		if c == nil {
+			t := time.NewTimer(delay)
+			select {
+			case <-n.ctx.Done():
+				t.Stop()
+				return
+			case <-t.C:
+			}
+			if delay < 30*time.Second {
+				delay *= 2
+			}
+			continue
+		}
+
 		delay = time.Second
 		n.wg.Add(1)
 		go func() { defer n.wg.Done(); n.handleConn(c, false) }()
@@ -195,8 +378,54 @@ func (n *Network) hasAddress(addr string) bool {
 }
 func (n *Network) handleConn(conn net.Conn, inbound bool) {
 	defer conn.Close()
+
+	remoteAddress := ""
+	if conn.RemoteAddr() != nil {
+		remoteAddress = conn.RemoteAddr().String()
+	}
+	remoteIPValue := remoteIP(conn.RemoteAddr())
+
+	if remoteIPValue != "" && !n.reputation.Allow(remoteIPValue, time.Now()) {
+		n.cfg.Logger.Warn("connection rejected by reputation policy",
+			"remote", remoteAddress,
+			"inbound", inbound,
+		)
+		return
+	}
+
+	if err := n.acquireHandshake(conn.RemoteAddr()); err != nil {
+		n.cfg.Logger.Warn("handshake admission rejected",
+			"remote", remoteAddress,
+			"inbound", inbound,
+			"error", err,
+		)
+		if remoteIPValue != "" {
+			n.recordReputationViolation(remoteIPValue, remoteAddress, security.ViolationMinor)
+		}
+		return
+	}
+	defer n.releaseHandshake(conn.RemoteAddr())
+
 	_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
-	s := &Session{n: n, conn: conn, tracker: p2p.NewRequestTracker(), pending: make(map[uint64]chan p2p.Frame), closed: make(chan struct{})}
+
+	messageLimit, limitErr := security.NewTokenBucket(
+		n.cfg.PeerMessageRate,
+		n.cfg.PeerMessageBurst,
+		time.Now(),
+	)
+	if limitErr != nil {
+		n.cfg.Logger.Warn("invalid peer message rate configuration", "error", limitErr)
+		return
+	}
+
+	s := &Session{
+		n:            n,
+		conn:         conn,
+		tracker:      p2p.NewRequestTracker(),
+		pending:      make(map[uint64]chan p2p.Frame),
+		closed:       make(chan struct{}),
+		messageLimit: messageLimit,
+	}
 	var remoteID, remoteAddr string
 	var caps uint32
 	var req uint64
@@ -246,6 +475,14 @@ func (n *Network) handleConn(conn net.Conn, inbound bool) {
 	}
 	if err != nil {
 		n.cfg.Logger.Debug("p2p handshake failed", "inbound", inbound, "error", err)
+		if remoteIPValue != "" {
+			state := n.recordReputationViolation(remoteIPValue, remoteAddress, security.ViolationMajor)
+			n.cfg.Logger.Warn("peer reputation violation",
+				"peer", remoteIPValue,
+				"state", state,
+				"error", err,
+			)
+		}
 		n.sendRejectRaw(conn, rejectFor(err))
 		return
 	}
@@ -325,6 +562,22 @@ func (n *Network) sendAck(s *Session, h p2p.Hello, req uint64) error {
 	_, err = s.conn.Write(b)
 	return err
 }
+func verifyPeerIdentity(nodeID string, publicKey []byte) error {
+	if len(publicKey) != 64 {
+		return errors.New("invalid public key length")
+	}
+
+	publicKeyHex := hex.EncodeToString(publicKey)
+	expectedBytes := corecrypto.SHA256Bytes([]byte(publicKeyHex))
+	expected := hex.EncodeToString(expectedBytes[:])
+
+	if !strings.EqualFold(nodeID, expected) {
+		return errors.New("node id does not match public key")
+	}
+
+	return nil
+}
+
 func (n *Network) verifyHello(h p2p.Hello) error {
 	if h.NetworkName != n.cfg.NetworkName {
 		return errors.New("wrong network")
@@ -332,11 +585,14 @@ func (n *Network) verifyHello(h p2p.Hello) error {
 	if hex.EncodeToString(h.GenesisHash) != strings.ToLower(n.cfg.GenesisHash) {
 		return errors.New("wrong genesis")
 	}
-	if err := validateAdvertisedAddress(h.AdvertisedAddress); err != nil {
+	if err := n.addressPolicy.Validate(h.AdvertisedAddress); err != nil {
 		return err
 	}
 	if h.NodeID == n.cfg.NodeID {
 		return errors.New("self peer")
+	}
+	if err := verifyPeerIdentity(h.NodeID, h.PublicKey); err != nil {
+		return err
 	}
 	sb, err := p2p.HelloSigningBytes(h)
 	if err != nil {
@@ -345,11 +601,17 @@ func (n *Network) verifyHello(h p2p.Hello) error {
 	if !corecrypto.VerifyECDSA(hex.EncodeToString(h.PublicKey), string(sb), h.Signature) {
 		return errors.New("invalid hello signature")
 	}
+	if err := n.handshakeReplay.Consume(h.Challenge, time.Now()); err != nil {
+		return err
+	}
 	return nil
 }
 func (n *Network) verifyAck(a p2p.HelloAck, req uint64, challenge []byte) error {
 	if req == 0 || a.NetworkName != n.cfg.NetworkName || hex.EncodeToString(a.GenesisHash) != strings.ToLower(n.cfg.GenesisHash) || !p2p.SameChallenge(a.EchoChallenge, challenge) {
 		return errors.New("invalid hello ack identity")
+	}
+	if err := verifyPeerIdentity(a.NodeID, a.PublicKey); err != nil {
+		return err
 	}
 	sb, err := p2p.HelloAckSigningBytes(a)
 	if err != nil {
@@ -407,6 +669,31 @@ func (s *Session) readLoop() {
 		if err != nil {
 			return
 		}
+
+		if s.messageLimit != nil && !s.messageLimit.Allow(time.Now(), 1) {
+			s.n.cfg.Logger.Warn(
+				"peer message rate exceeded",
+				"peer", s.p.ID,
+				"address", s.p.Address,
+			)
+			state := s.n.recordReputationViolation(
+				s.p.ID,
+				s.p.Address,
+				security.ViolationMajor,
+			)
+			_ = s.writeReject(
+				f.RequestID,
+				p2p.RejectInvalidRequest,
+				true,
+				"message rate exceeded",
+			)
+			s.n.cfg.Logger.Warn("peer quarantined or banned",
+				"peer", s.p.ID,
+				"state", state,
+			)
+			return
+		}
+
 		if !p2p.AllowedInState(p2p.Established, f.Type) {
 			return
 		}
@@ -424,6 +711,17 @@ func (s *Session) readLoop() {
 		}
 		if err := s.handle(f); err != nil {
 			s.n.cfg.Logger.Debug("peer message rejected", "peer", s.p.ID, "type", f.Type.String(), "error", err)
+			state := s.n.recordReputationViolation(
+				s.p.ID,
+				s.p.Address,
+				security.ViolationMinor,
+			)
+			if state != security.PeerGood {
+				s.n.cfg.Logger.Warn("peer reputation state changed",
+					"peer", s.p.ID,
+					"state", state,
+				)
+			}
 			code := p2p.RejectInvalidRequest
 			closeFlag := false
 			if f.Type == p2p.NEW_BLOCK {

@@ -182,9 +182,21 @@ func (n *Node) SubmitTransaction(tx transaction.Transaction) error {
 	if n.chain == nil || n.pool == nil {
 		return errors.New("node not started")
 	}
+
+	if err := tx.Validate(); err != nil {
+		return err
+	}
+
+	// Reject transactions already confirmed on the active chain.
+	// The index is rebuilt during startup and active-chain reorgs.
+	if n.chain.HasConfirmedTransaction(tx.TxHash) {
+		return errors.New("transaction already confirmed")
+	}
+
 	if err := n.pool.Add(tx, n.chain.Balance); err != nil {
 		return err
 	}
+
 	return nil
 }
 func (n *Node) Status() map[string]any {

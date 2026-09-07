@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SAYANJALI Phase 7 Genesis Allocation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "sender", "allocations", "total_base_units"],
+  "properties": {
+    "version": {"const": 1},
+    "sender": {"const": "SYJ-GENESIS-ALLOCATION-0000000000000000"},
+    "allocations": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["category", "recipient", "amount_base_units"],
+        "properties": {
+          "category": {"enum": ["presale", "treasury", "ecosystem", "liquidity", "team"]},
+          "recipient": {"type": "string", "minLength": 1},
+          "amount_base_units": {"type": "integer", "minimum": 1}
+        }
+      }
+    },
+    "total_base_units": {"const": 28800000000000000}
+  }
+}

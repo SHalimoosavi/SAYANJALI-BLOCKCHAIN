@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "sender": "SYJ-GENESIS-ALLOCATION-0000000000000000",
+  "allocations": [
+    {"category": "presale", "recipient": "<INSERT_FINAL_PRESALE_PUBLIC_ADDRESS>", "amount_base_units": 7200000000000000},
+    {"category": "treasury", "recipient": "<INSERT_FINAL_TREASURY_PUBLIC_ADDRESS>", "amount_base_units": 5760000000000000},
+    {"category": "ecosystem", "recipient": "<INSERT_FINAL_ECOSYSTEM_PUBLIC_ADDRESS>", "amount_base_units": 3600000000000000},
+    {"category": "liquidity", "recipient": "<INSERT_FINAL_LIQUIDITY_PUBLIC_ADDRESS>", "amount_base_units": 4320000000000000},
+    {"category": "team", "recipient": "<INSERT_FINAL_TEAM_ADVISORS_PUBLIC_ADDRESS>", "amount_base_units": 7920000000000000}
+  ],
+  "total_base_units": 28800000000000000
+}

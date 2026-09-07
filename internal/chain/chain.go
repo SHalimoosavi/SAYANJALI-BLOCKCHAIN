@@ -14,17 +14,23 @@ import (
 )
 
 type Chain struct {
-	mu        sync.RWMutex
-	store     *storage.Store
-	blocks    map[string]*block.Block
-	activeTip string
-	active    []*block.Block
-	balances  state.Balances
-	supply    uint64
+	mu          sync.RWMutex
+	store       *storage.Store
+	blocks      map[string]*block.Block
+	activeTip   string
+	active      []*block.Block
+	balances    state.Balances
+	supply      uint64
+	confirmedTx map[string]struct{}
 }
 
 func Open(store *storage.Store) (*Chain, error) {
-	c := &Chain{store: store, blocks: make(map[string]*block.Block), balances: make(state.Balances)}
+	c := &Chain{
+		store:       store,
+		blocks:      make(map[string]*block.Block),
+		balances:    make(state.Balances),
+		confirmedTx: make(map[string]struct{}),
+	}
 	bs, err := store.AllBlocks()
 	if err != nil {
 		return nil, err
@@ -281,11 +287,17 @@ func (c *Chain) buildChain(tip string) ([]*block.Block, error) {
 func (c *Chain) replayState(ch []*block.Block) {
 	c.balances = make(state.Balances)
 	c.supply = 0
+	c.confirmedTx = make(map[string]struct{})
+
 	for _, b := range ch {
 		if b.Index == 0 {
 			continue
 		}
 		for _, tx := range b.Transactions {
+			if tx.TxHash != "" {
+				c.confirmedTx[tx.TxHash] = struct{}{}
+			}
+
 			if tx.Sender == protocol.CoinbaseSender {
 				_ = c.balances.Credit(tx.Receiver, tx.AmountBaseUnits)
 				c.supply += tx.AmountBaseUnits
@@ -383,6 +395,16 @@ func (c *Chain) GetBlock(hash string) (*block.Block, error) {
 	}
 	return b, nil
 }
+
+// HasConfirmedTransaction reports whether txHash is present in the active chain.
+// The index intentionally excludes transactions that exist only on losing forks.
+func (c *Chain) HasConfirmedTransaction(txHash string) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	_, ok := c.confirmedTx[txHash]
+	return ok
+}
+
 func (c *Chain) HeaderBytesAfter(locator [][32]byte, stop [32]byte, max int) [][]byte { return nil }
 func (c *Chain) ActiveHeaderHashes() [][32]byte {
 	c.mu.RLock()
