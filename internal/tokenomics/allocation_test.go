@@ -79,3 +79,34 @@ func TestSupplyPlan(t *testing.T) {
 		t.Fatal("maximum supply invariant failed")
 	}
 }
+
+func TestGenesisStateCommitmentIsOrderIndependent(t *testing.T) {
+	g := validAllocation()
+	s := GenesisState(g)
+	a, err := s.Commitment()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Allocations[0], s.Allocations[4] = s.Allocations[4], s.Allocations[0]
+	b, err := s.Commitment()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a != b {
+		t.Fatalf("commitment changed with allocation order: %s != %s", a, b)
+	}
+}
+
+func TestGenesisStateCanonicalBytesAreDeterministic(t *testing.T) {
+	b1, err := GenesisState(validAllocation()).CanonicalBytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	b2, err := GenesisState(validAllocation()).CanonicalBytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(b1) != string(b2) {
+		t.Fatal("canonical genesis-state bytes changed between identical constructions")
+	}
+}

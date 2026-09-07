@@ -19,20 +19,23 @@ import (
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/mempool"
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/p2pnode"
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/storage"
+	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/tokenomics"
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/transaction"
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/pkg/protocol"
 )
 
 type Config struct {
-	DataDir           string   `json:"data_dir"`
-	NetworkName       string   `json:"network_name"`
-	ListenAddress     string   `json:"listen_address"`
-	AdvertisedAddress string   `json:"advertised_address"`
-	Seeds             []string `json:"seeds"`
-	MaxPeers          int      `json:"max_peers"`
-	APIListenAddress  string   `json:"api_listen_address"`
-	MempoolMax        int      `json:"mempool_max"`
-	LogLevel          string   `json:"log_level"`
+	DataDir                 string   `json:"data_dir"`
+	NetworkName             string   `json:"network_name"`
+	ListenAddress           string   `json:"listen_address"`
+	AdvertisedAddress       string   `json:"advertised_address"`
+	Seeds                   []string `json:"seeds"`
+	MaxPeers                int      `json:"max_peers"`
+	APIListenAddress        string   `json:"api_listen_address"`
+	MempoolMax              int      `json:"mempool_max"`
+	LogLevel                string   `json:"log_level"`
+	Phase7GenesisStatePath  string   `json:"phase7_genesis_state_path,omitempty"`
+	Phase7GenesisCommitment string   `json:"phase7_genesis_commitment,omitempty"`
 }
 
 func DefaultConfig(dataDir string) Config {
@@ -126,7 +129,34 @@ func (n *Node) Start(ctx context.Context) error {
 		return err
 	}
 	n.store = st
-	ch, err := chain.Open(st)
+	var ch *chain.Chain
+	if n.cfg.NetworkName == tokenomics.Phase7NetworkName {
+		if n.cfg.Phase7GenesisStatePath == "" {
+			st.Close()
+			return errors.New("Phase 7 network requires a genesis state path")
+		}
+		if n.cfg.Phase7GenesisCommitment == "" {
+			st.Close()
+			return errors.New("Phase 7 network requires a genesis state commitment")
+		}
+		gs, err := tokenomics.Load(n.cfg.Phase7GenesisStatePath)
+		if err != nil {
+			st.Close()
+			return err
+		}
+		commitment, err := gs.Commitment()
+		if err != nil {
+			st.Close()
+			return err
+		}
+		if commitment != n.cfg.Phase7GenesisCommitment {
+			st.Close()
+			return errors.New("Phase 7 genesis commitment mismatch")
+		}
+		ch, err = chain.OpenWithGenesisState(st, gs)
+	} else {
+		ch, err = chain.Open(st)
+	}
 	if err != nil {
 		st.Close()
 		return err
@@ -206,6 +236,9 @@ func (n *Node) Status() map[string]any {
 		m["tip_hash"] = n.chain.TipHash()
 		m["chain_work"] = n.chain.Work().String()
 		m["supply_base_units"] = n.chain.Supply()
+		m["genesis_supply_base_units"] = n.chain.GenesisSupply()
+		m["mining_issued_base_units"] = n.chain.MiningIssued()
+		m["phase7"] = n.chain.IsPhase7()
 	}
 	if n.id != nil {
 		m["node_id"] = n.id.NodeID
@@ -218,9 +251,12 @@ func (n *Node) Status() map[string]any {
 }
 func MineNext(ch *chain.Chain, receiver string, txs []transaction.Transaction) (*block.Block, error) {
 	tip := ch.Tip()
-	reward, ok := protocol.DefaultBlockRewardUnits, true
-	if ch.Supply() >= protocol.MaxSupplyBaseUnits {
-		reward, ok = 0, false
+	var reward uint64
+	var ok bool
+	if ch.IsPhase7() {
+		reward, ok = consensus.ExpectedMiningReward(ch.MiningIssued())
+	} else {
+		reward, ok = consensus.ExpectedReward(ch.Supply())
 	}
 	if !ok {
 		return nil, errors.New("no reward remains")

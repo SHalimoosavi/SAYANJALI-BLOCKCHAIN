@@ -13,6 +13,7 @@ import (
 
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/block"
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/chain"
+	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/codec"
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/crypto"
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/identity"
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/mempool"
@@ -20,6 +21,7 @@ import (
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/security"
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/storage"
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/transaction"
+	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/pkg/protocol"
 )
 
 func testNetwork(t *testing.T, seed []string) (*Network, func()) {
@@ -828,5 +830,22 @@ func TestLiveReputationBlocksBannedIP(t *testing.T) {
 	var b [1]byte
 	if _, err := conn.Read(b[:]); err == nil {
 		t.Fatal("banned IP unexpectedly received data")
+	}
+}
+
+func TestGenesisAllocationCannotEnterP2PTransactionPath(t *testing.T) {
+	p := mempool.New(10)
+	n := &Network{pool: p}
+	s := &Session{n: n}
+	tx := transaction.Transaction{Sender: protocol.GenesisAllocationSender, Receiver: "SYJ0000000000000000000000000000000000000000", AmountBaseUnits: 1, Timestamp: 1, TxHash: "not-valid"}
+	raw, err := codec.TransactionBytes(tx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.acceptTx(raw); err == nil {
+		t.Fatal("accepted genesis allocation through NEW_TRANSACTION path")
+	}
+	if p.Len() != 0 {
+		t.Fatal("genesis allocation entered mempool through P2P path")
 	}
 }

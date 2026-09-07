@@ -10,26 +10,46 @@ import (
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/consensus"
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/state"
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/storage"
+	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/tokenomics"
+	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/wallet"
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/pkg/protocol"
 )
 
 type Chain struct {
-	mu          sync.RWMutex
-	store       *storage.Store
-	blocks      map[string]*block.Block
-	activeTip   string
-	active      []*block.Block
-	balances    state.Balances
-	supply      uint64
-	confirmedTx map[string]struct{}
+	mu            sync.RWMutex
+	store         *storage.Store
+	blocks        map[string]*block.Block
+	activeTip     string
+	active        []*block.Block
+	balances      state.Balances
+	supply        uint64
+	genesisSupply uint64
+	miningIssued  uint64
+	genesisState  *tokenomics.GenesisState
+	confirmedTx   map[string]struct{}
 }
 
 func Open(store *storage.Store) (*Chain, error) {
+	return open(store, nil)
+}
+
+// OpenWithGenesisState opens a Phase 7 economic chain while preserving the
+// historical frozen block genesis. The economic genesis is deterministic
+// initial state, not a block or transaction.
+func OpenWithGenesisState(store *storage.Store, genesisState tokenomics.GenesisState) (*Chain, error) {
+	if err := genesisState.Validate(wallet.ValidAddress); err != nil {
+		return nil, err
+	}
+	return open(store, &genesisState)
+}
+
+func open(store *storage.Store, genesisState *tokenomics.GenesisState) (*Chain, error) {
 	c := &Chain{
-		store:       store,
-		blocks:      make(map[string]*block.Block),
-		balances:    make(state.Balances),
-		confirmedTx: make(map[string]struct{}),
+		store:        store,
+		blocks:       make(map[string]*block.Block),
+		balances:     make(state.Balances),
+		confirmedTx:  make(map[string]struct{}),
+		genesisState: genesisState,
 	}
 	bs, err := store.AllBlocks()
 	if err != nil {
@@ -70,15 +90,25 @@ func Open(store *storage.Store) (*Chain, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := ValidateChain(candidate); err != nil {
+	if err := c.validateChain(candidate); err != nil {
 		return nil, err
 	}
 	c.activeTip = tip
 	c.active = candidate
-	c.replayState(candidate)
+	if err := c.replayState(candidate); err != nil {
+		return nil, err
+	}
 	return c, nil
 }
 func ValidateChain(ch []*block.Block) error {
+	return validateChainWithState(ch, nil)
+}
+
+func (c *Chain) validateChain(ch []*block.Block) error {
+	return validateChainWithState(ch, c.genesisState)
+}
+
+func validateChainWithState(ch []*block.Block, genesisState *tokenomics.GenesisState) error {
 	if len(ch) == 0 {
 		return errors.New("empty chain")
 	}
@@ -87,13 +117,14 @@ func ValidateChain(ch []*block.Block) error {
 	}
 	cfg := protocol.DefaultDifficultyConfig()
 	for i := 1; i < len(ch); i++ {
-		if err := validateNext(ch[i], ch[:i], cfg); err != nil {
+		if err := validateNext(ch[i], ch[:i], cfg, genesisState); err != nil {
 			return fmt.Errorf("block %d: %w", ch[i].Index, err)
 		}
 	}
 	return nil
 }
-func validateNext(b *block.Block, prefix []*block.Block, cfg protocol.DifficultyConfig) error {
+
+func validateNext(b *block.Block, prefix []*block.Block, cfg protocol.DifficultyConfig, genesisState *tokenomics.GenesisState) error {
 	p := prefix[len(prefix)-1]
 	if b.Index != p.Index+1 {
 		return errors.New("non-sequential block index")
@@ -104,7 +135,17 @@ func validateNext(b *block.Block, prefix []*block.Block, cfg protocol.Difficulty
 	if b.Timestamp <= p.Timestamp {
 		return errors.New("timestamp must increase")
 	}
-	reward, ok := consensus.ExpectedReward(supplyFor(prefix))
+	var reward uint64
+	var ok bool
+	if genesisState != nil {
+		mined, err := miningIssuedFor(prefix)
+		if err != nil {
+			return err
+		}
+		reward, ok = consensus.ExpectedMiningReward(mined)
+	} else {
+		reward, ok = consensus.ExpectedReward(supplyFor(prefix))
+	}
 	if !ok {
 		return errors.New("no issuance remains")
 	}
@@ -121,7 +162,7 @@ func validateNext(b *block.Block, prefix []*block.Block, cfg protocol.Difficulty
 	if err := consensus.ValidatePoW(b, expected); err != nil {
 		return err
 	}
-	if err := stateTransition(prefix, b, reward); err != nil {
+	if err := stateTransition(prefix, b, reward, genesisState); err != nil {
 		return err
 	}
 	return nil
@@ -161,34 +202,24 @@ func supplyFor(ch []*block.Block) uint64 {
 	}
 	return s
 }
-func stateTransition(prefix []*block.Block, b *block.Block, reward uint64) error {
-	balances := make(state.Balances)
-	var supply uint64
-	for _, bl := range prefix {
-		if bl.Index == 0 {
-			continue
+func stateTransition(prefix []*block.Block, b *block.Block, reward uint64, genesisState *tokenomics.GenesisState) error {
+	balances, genesisSupply, miningIssued, supply, err := replayBalances(prefix, genesisState)
+	if err != nil {
+		return err
+	}
+	if genesisState != nil {
+		if genesisSupply != tokenomics.ExpectedGenesisTotal() {
+			return errors.New("invalid Phase 7 genesis supply")
 		}
-		for _, tx := range bl.Transactions {
-			if tx.Sender == protocol.CoinbaseSender {
-				if !balancesCredit(balances, tx.Receiver, tx.AmountBaseUnits) {
-					return errors.New("balance overflow")
-				}
-				supply += tx.AmountBaseUnits
-			} else {
-				if err := tx.Validate(); err != nil {
-					return err
-				}
-				if err := balances.Debit(tx.Sender, tx.AmountBaseUnits); err != nil {
-					return err
-				}
-				if err := balances.Credit(tx.Receiver, tx.AmountBaseUnits); err != nil {
-					return err
-				}
-			}
+		if _, err := tokenomics.NewSupplyPlan(genesisSupply); err != nil {
+			return err
 		}
 	}
 	coinbases := 0
 	for _, tx := range b.Transactions {
+		if tx.Sender == protocol.GenesisAllocationSender {
+			return errors.New("genesis allocation cannot be a transaction")
+		}
 		if tx.Sender == protocol.CoinbaseSender {
 			coinbases++
 			if tx.AmountBaseUnits != reward {
@@ -196,6 +227,13 @@ func stateTransition(prefix []*block.Block, b *block.Block, reward uint64) error
 			}
 			if !balancesCredit(balances, tx.Receiver, tx.AmountBaseUnits) {
 				return errors.New("balance overflow")
+			}
+			if ^uint64(0)-miningIssued < tx.AmountBaseUnits {
+				return errors.New("mining issuance overflow")
+			}
+			miningIssued += tx.AmountBaseUnits
+			if ^uint64(0)-supply < tx.AmountBaseUnits {
+				return errors.New("supply overflow")
 			}
 			supply += tx.AmountBaseUnits
 		} else {
@@ -213,12 +251,112 @@ func stateTransition(prefix []*block.Block, b *block.Block, reward uint64) error
 	if coinbases != 1 {
 		return errors.New("exactly one coinbase required")
 	}
+	if genesisState != nil {
+		plan, err := tokenomics.NewSupplyPlan(genesisSupply)
+		if err != nil {
+			return err
+		}
+		if err := plan.ValidateMiningIssued(miningIssued); err != nil {
+			return err
+		}
+	}
 	if supply > protocol.MaxSupplyBaseUnits {
 		return errors.New("maximum supply exceeded")
 	}
 	return nil
 }
+
 func balancesCredit(b state.Balances, a string, v uint64) bool { return b.Credit(a, v) == nil }
+
+func replayBalances(ch []*block.Block, genesisState *tokenomics.GenesisState) (state.Balances, uint64, uint64, uint64, error) {
+	balances := make(state.Balances)
+	var genesisSupply uint64
+	if genesisState != nil {
+		if err := genesisState.Validate(wallet.ValidAddress); err != nil {
+			return nil, 0, 0, 0, err
+		}
+		for _, a := range genesisState.Allocations {
+			if !balancesCredit(balances, a.Recipient, a.AmountBaseUnits) {
+				return nil, 0, 0, 0, errors.New("genesis balance overflow")
+			}
+			if ^uint64(0)-genesisSupply < a.AmountBaseUnits {
+				return nil, 0, 0, 0, errors.New("genesis supply overflow")
+			}
+			genesisSupply += a.AmountBaseUnits
+		}
+		if genesisSupply != tokenomics.ExpectedGenesisTotal() {
+			return nil, 0, 0, 0, errors.New("genesis supply mismatch")
+		}
+	}
+	var miningIssued uint64
+	var supply = genesisSupply
+	for _, b := range ch {
+		if b.Index == 0 {
+			continue
+		}
+		for _, tx := range b.Transactions {
+			if tx.TxHash != "" && tx.Sender != protocol.GenesisAllocationSender {
+				// confirmedTx is rebuilt by replayState; this function only rebuilds money.
+			}
+			if tx.Sender == protocol.GenesisAllocationSender {
+				return nil, 0, 0, 0, errors.New("genesis allocation cannot appear in a block")
+			}
+			if tx.Sender == protocol.CoinbaseSender {
+				if !balancesCredit(balances, tx.Receiver, tx.AmountBaseUnits) {
+					return nil, 0, 0, 0, errors.New("balance overflow")
+				}
+				if ^uint64(0)-miningIssued < tx.AmountBaseUnits || ^uint64(0)-supply < tx.AmountBaseUnits {
+					return nil, 0, 0, 0, errors.New("issuance overflow")
+				}
+				miningIssued += tx.AmountBaseUnits
+				supply += tx.AmountBaseUnits
+			} else {
+				if err := tx.Validate(); err != nil {
+					return nil, 0, 0, 0, err
+				}
+				if err := balances.Debit(tx.Sender, tx.AmountBaseUnits); err != nil {
+					return nil, 0, 0, 0, err
+				}
+				if err := balances.Credit(tx.Receiver, tx.AmountBaseUnits); err != nil {
+					return nil, 0, 0, 0, err
+				}
+			}
+		}
+	}
+	if genesisState != nil {
+		plan, err := tokenomics.NewSupplyPlan(genesisSupply)
+		if err != nil {
+			return nil, 0, 0, 0, err
+		}
+		if err := plan.ValidateMiningIssued(miningIssued); err != nil {
+			return nil, 0, 0, 0, err
+		}
+	} else if supply > protocol.MaxSupplyBaseUnits {
+		return nil, 0, 0, 0, errors.New("maximum supply exceeded")
+	}
+	return balances, genesisSupply, miningIssued, supply, nil
+}
+
+func miningIssuedFor(ch []*block.Block) (uint64, error) {
+	var total uint64
+	for _, b := range ch {
+		if b.Index == 0 {
+			continue
+		}
+		for _, tx := range b.Transactions {
+			if tx.Sender == protocol.GenesisAllocationSender {
+				return 0, errors.New("genesis allocation cannot appear in a block")
+			}
+			if tx.Sender == protocol.CoinbaseSender {
+				if ^uint64(0)-total < tx.AmountBaseUnits {
+					return 0, errors.New("mining issuance overflow")
+				}
+				total += tx.AmountBaseUnits
+			}
+		}
+	}
+	return total, nil
+}
 
 // transactionsValid performs structural transaction/coinbase checks without mutating chain state.
 func transactionsValid(b *block.Block, reward uint64) error {
@@ -284,11 +422,16 @@ func (c *Chain) buildChain(tip string) ([]*block.Block, error) {
 	}
 	return rev, nil
 }
-func (c *Chain) replayState(ch []*block.Block) {
-	c.balances = make(state.Balances)
-	c.supply = 0
+func (c *Chain) replayState(ch []*block.Block) error {
+	balances, genesisSupply, miningIssued, supply, err := replayBalances(ch, c.genesisState)
+	if err != nil {
+		return err
+	}
+	c.balances = balances
+	c.genesisSupply = genesisSupply
+	c.miningIssued = miningIssued
+	c.supply = supply
 	c.confirmedTx = make(map[string]struct{})
-
 	for _, b := range ch {
 		if b.Index == 0 {
 			continue
@@ -297,16 +440,9 @@ func (c *Chain) replayState(ch []*block.Block) {
 			if tx.TxHash != "" {
 				c.confirmedTx[tx.TxHash] = struct{}{}
 			}
-
-			if tx.Sender == protocol.CoinbaseSender {
-				_ = c.balances.Credit(tx.Receiver, tx.AmountBaseUnits)
-				c.supply += tx.AmountBaseUnits
-			} else {
-				_ = c.balances.Debit(tx.Sender, tx.AmountBaseUnits)
-				_ = c.balances.Credit(tx.Receiver, tx.AmountBaseUnits)
-			}
 		}
 	}
+	return nil
 }
 func work(ch []*block.Block) *big.Int { return consensus.ChainWork(ch) }
 func (c *Chain) Accept(b *block.Block) (bool, string, error) {
@@ -322,10 +458,10 @@ func (c *Chain) Accept(b *block.Block) (bool, string, error) {
 	if err != nil {
 		return false, "unknown_ancestor", err
 	}
-	if err := ValidateChain(prefix); err != nil {
+	if err := c.validateChain(prefix); err != nil {
 		return false, "invalid_ancestor", err
 	}
-	if err := validateNext(b, prefix, protocol.DefaultDifficultyConfig()); err != nil {
+	if err := validateNext(b, prefix, protocol.DefaultDifficultyConfig(), c.genesisState); err != nil {
 		return false, "invalid", err
 	}
 	if err := c.store.SaveBlock(b); err != nil {
@@ -339,7 +475,9 @@ func (c *Chain) Accept(b *block.Block) (bool, string, error) {
 		}
 		c.activeTip = b.Hash
 		c.active = candidate
-		c.replayState(candidate)
+		if err := c.replayState(candidate); err != nil {
+			return false, "state", err
+		}
 		return true, "best", nil
 	}
 	return true, "fork", nil
@@ -404,6 +542,18 @@ func (c *Chain) HasConfirmedTransaction(txHash string) bool {
 	_, ok := c.confirmedTx[txHash]
 	return ok
 }
+
+func (c *Chain) GenesisState() (tokenomics.GenesisState, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.genesisState == nil {
+		return tokenomics.GenesisState{}, false
+	}
+	return *c.genesisState, true
+}
+func (c *Chain) GenesisSupply() uint64 { c.mu.RLock(); defer c.mu.RUnlock(); return c.genesisSupply }
+func (c *Chain) MiningIssued() uint64  { c.mu.RLock(); defer c.mu.RUnlock(); return c.miningIssued }
+func (c *Chain) IsPhase7() bool        { c.mu.RLock(); defer c.mu.RUnlock(); return c.genesisState != nil }
 
 func (c *Chain) HeaderBytesAfter(locator [][32]byte, stop [32]byte, max int) [][]byte { return nil }
 func (c *Chain) ActiveHeaderHashes() [][32]byte {
