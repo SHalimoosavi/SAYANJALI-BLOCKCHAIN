@@ -757,3 +757,9 @@ Each node remains a single FastAPI listener in this release; set a unique `SYJ_P
 `GET /network/status` reports lifecycle, chain height/work, peer counts, mempool size, current difficulty, total SYJ supply in base units, and bounded propagation counters. `GET /network/peers` additionally reports runtime failure/backoff state and discovered capabilities.
 
 The maintenance loop is deliberately bounded and deterministic: it only contacts configured/known peers, skips peers in retry backoff, exchanges peer lists, and runs the existing accumulated-work synchronization logic. It does not scan the public internet.
+
+## Phase 6 — Go Production Node
+
+The repository now contains the first production-oriented Go node layer under `internal/node`, `internal/chain`, `internal/storage`, `internal/identity`, `internal/mempool`, and `internal/p2pnode`, with executable entrypoint `cmd/syjd`. The Phase 5.2 binary P2P codec remains frozen and is consumed rather than redesigned.
+
+See `docs/phase6/STATUS.md` and `docs/phase6/TESTNET.md` for implementation boundaries and local testnet operation.

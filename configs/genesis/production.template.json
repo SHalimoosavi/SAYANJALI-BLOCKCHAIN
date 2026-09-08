@@ -1,0 +1,33 @@
+{
+  "network_name": "REPLACE_WITH_APPROVED_NETWORK_NAME",
+  "environment": "production",
+  "genesis_state_version": "1",
+  "tokenomics_version": "1",
+  "allocations": [
+    {
+      "category": "presale",
+      "address": "",
+      "amount_base_units": 7200000000000000
+    },
+    {
+      "category": "treasury",
+      "address": "",
+      "amount_base_units": 5760000000000000
+    },
+    {
+      "category": "ecosystem",
+      "address": "",
+      "amount_base_units": 3600000000000000
+    },
+    {
+      "category": "liquidity",
+      "address": "",
+      "amount_base_units": 4320000000000000
+    },
+    {
+      "category": "team",
+      "address": "",
+      "amount_base_units": 7920000000000000
+    }
+  ]
+}

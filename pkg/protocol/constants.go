@@ -13,6 +13,7 @@ const (
 	AddressPrefix           = "SYJ"
 	AddressHashLength       = 40
 	CoinbaseSender          = "SYJ-COINBASE-0000000000000000000000000000"
+	GenesisAllocationSender = "SYJ-GENESIS-ALLOCATION-0000000000000000"
 	GenesisMessage          = "SAYANJALI BLOCKCHAIN GENESIS BLOCK - SYJ TOKEN NETWORK"
 	GenesisPreviousHash     = "0000000000000000000000000000000000000000000000000000000000000000"
 	GenesisTimestamp        = float64(1735689600)

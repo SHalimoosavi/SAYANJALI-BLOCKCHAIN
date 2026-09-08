@@ -1,0 +1,63 @@
+SAYANJALI BLOCKCHAIN — PHASE 6 BUILD MANIFEST
+
+BASELINE ARCHIVE SHA256
+42a95912fd4c40773620c96b081b46c3a095f37f68b5541b7d722088da900f3d
+
+PHASE 6 SCOPE
+First executable persistent Go node layer above frozen Phase 4 / Phase 5.1 / Phase 5.2 foundations.
+
+FROZEN LAYERS
+Phase 4 protocol specification: UNCHANGED
+Phase 4 nine compatibility vectors: UNCHANGED
+Phase 5.1 crypto implementation/dependency: UNCHANGED
+Phase 5.2 wire implementation/specification: UNCHANGED
+
+NEW IMPLEMENTATION
+cmd/syjd
+internal/codec
+internal/identity
+internal/storage
+internal/chain
+internal/mempool
+internal/p2pnode
+internal/node
+scripts/testnet
+scripts/phase6_frozen_verify.sh
+scripts/phase6_build_validate.sh
+
+docs/phase6/*
+
+VALIDATION CLASSIFICATION IN BUILD ENVIRONMENT
+- gofmt: PASS
+- Go compile/type-check with temporary dependency stub: PASS
+- real go test ./...: ENVIRONMENT-LIMITED (v4.4.1 unavailable to this isolated environment)
+- real go vet ./...: NOT EXECUTED (same dependency limitation)
+- real go build ./...: NOT EXECUTED (same dependency limitation)
+- real race test: NOT EXECUTED (same dependency limitation)
+- Python compatibility suite: NOT EXECUTED in this isolated environment
+- frozen Phase 4 hashes: PASS
+- frozen file immutability against supplied baseline: PASS
+- forbidden artifact/secret scan: PASS
+- clean extraction source inspection: PASS
+
+IMPORTANT
+The temporary crypto stub used for compile/type-check is not part of this source tree and is not part of the final ZIP. It MUST NOT be treated as a production cryptographic implementation.
+
+Phase 6 is not labelled production-ready until the real dependency-backed tests and real multi-node runtime validation are executed from the clean ZIP.
+
+POST-VALIDATION CORRECTIVE PATCH
+- Block construction now materializes a missing transaction hash using the existing frozen Transaction.ComputeHash() algorithm. This fixes propagation/storage round-trip of newly constructed coinbase transactions without changing the hash algorithm or serialization.
+- P2P network startup now derives a reachable 127.0.0.1 advertised endpoint when the listener is configured with an unspecified address and no explicit advertised address. Explicit production advertised addresses remain authoritative.
+- Regression tests cover both behaviors.
+
+POST-VALIDATION CORRECTIVE PATCH 02
+- Peer cleanup is session-aware so an old duplicate connection cannot delete a newer live peer entry; this stabilizes simultaneous inbound/outbound seed dialing and peer counts.
+- Difficulty selection retains the previous difficulty until the frozen 10-block retarget window exists and invokes retarget only at the corresponding epoch boundary. Frozen consensus code/vectors are unchanged.
+- Node lifecycle now exposes Done(); syjd start exits when Node.Stop is triggered by the API shutdown endpoint, preventing stale long-lived processes after stop.
+- Removed an unused transaction JSON marshal from Node.SubmitTransaction.
+
+VALIDATION STATUS AFTER PATCH 02
+- Source formatting: PASS
+- Final dependency-backed Termux validation: REQUIRED
+- Final 3-node propagation/recovery validation: REQUIRED
+- GitHub push/PR/merge: NOT PERFORMED
