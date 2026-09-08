@@ -53,3 +53,6 @@ htmlcov/
 
 # Termux-specific
 .termux/
+
+# Local 3-node testnet runtime
+.phase6-testnet/
