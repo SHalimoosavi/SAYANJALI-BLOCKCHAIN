@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/codec"
+	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/security"
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/transaction"
 )
 
@@ -21,9 +22,46 @@ func (n *Node) ServeAPI() *http.Server {
 	mux.HandleFunc("/chain", a.chain)
 	mux.HandleFunc("/blocks/", a.block)
 	mux.HandleFunc("/transactions", a.transactions)
-	mux.HandleFunc("/mine", a.mine)
-	mux.HandleFunc("/shutdown", a.shutdown)
+	mux.HandleFunc("/mine", a.withAuth(a.mine))
+	mux.HandleFunc("/shutdown", a.withAuth(a.shutdown))
 	return &http.Server{Addr: n.cfg.APIListenAddress, Handler: securityHeaders(mux)}
+}
+
+// withAuth gates a mutating handler behind a bearer token. Fail-closed: if no
+// token is configured, the route is disabled rather than left open. This is
+// deliberate — binding the API to loopback is not treated as a substitute
+// for authentication, since a shared/multi-tenant host or a forwarded port
+// can still expose a loopback-bound service to other callers.
+func (a *API) withAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !a.requireAuth(w, r) {
+			return
+		}
+		next(w, r)
+	}
+}
+
+// requireAuth checks the Authorization: Bearer <token> header using a
+// constant-time comparison (reusing the Phase 6.5 security primitive) and
+// writes an error response and returns false if the check fails.
+func (a *API) requireAuth(w http.ResponseWriter, r *http.Request) bool {
+	token := a.n.cfg.APIAuthToken
+	if token == "" {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "mutating API access is disabled: no api_auth_token configured"})
+		return false
+	}
+	const prefix = "Bearer "
+	h := r.Header.Get("Authorization")
+	if !strings.HasPrefix(h, prefix) {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "missing bearer token"})
+		return false
+	}
+	supplied := strings.TrimPrefix(h, prefix)
+	if !security.ConstantTimeTokenEqual(token, supplied) {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid bearer token"})
+		return false
+	}
+	return true
 }
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -92,6 +130,9 @@ func (a *API) block(w http.ResponseWriter, r *http.Request) {
 }
 func (a *API) transactions(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
+		if !a.requireAuth(w, r) {
+			return
+		}
 		var tx transaction.Transaction
 		r.Body = http.MaxBytesReader(w, r.Body, 64*1024)
 		if e := json.NewDecoder(r.Body).Decode(&tx); e != nil {
@@ -117,10 +158,13 @@ func (a *API) mine(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(405)
 		return
 	}
+	// The reward always goes to this node's own identity address. A
+	// caller-supplied receiver parameter was removed entirely: even
+	// behind authentication, redirecting a node's mining reward to an
+	// arbitrary address is not a use case this project defines, and the
+	// smaller surface (no redirection at all) is safer than authenticating
+	// a redirection feature nobody asked for.
 	receiver := a.n.id.Address
-	if v := r.URL.Query().Get("receiver"); v != "" {
-		receiver = v
-	}
 	txs := a.n.pool.List(500)
 	b, e := MineNext(a.n.chain, receiver, txs)
 	if e != nil {

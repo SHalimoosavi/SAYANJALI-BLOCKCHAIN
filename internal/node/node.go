@@ -36,6 +36,7 @@ type Config struct {
 	LogLevel                string   `json:"log_level"`
 	Phase7GenesisStatePath  string   `json:"phase7_genesis_state_path,omitempty"`
 	Phase7GenesisCommitment string   `json:"phase7_genesis_commitment,omitempty"`
+	APIAuthToken            string   `json:"api_auth_token,omitempty"`
 }
 
 func DefaultConfig(dataDir string) Config {
