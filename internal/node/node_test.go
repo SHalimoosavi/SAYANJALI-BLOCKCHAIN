@@ -2,9 +2,12 @@ package node
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/chain"
@@ -15,7 +18,17 @@ import (
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/pkg/protocol"
 )
 
+func setNodeTestIdentityKey(t *testing.T) {
+	t.Helper()
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SYJ_IDENTITY_ENCRYPTION_KEY", hex.EncodeToString(b))
+}
+
 func TestNodeIdentityAndChainRecoverAcrossRestart(t *testing.T) {
+	setNodeTestIdentityKey(t)
 	dir := t.TempDir()
 	cfg := DefaultConfig(dir)
 	cfg.ListenAddress = "127.0.0.1:0"
@@ -97,6 +110,7 @@ func TestPhase7GenesisAllocationCannotEnterTransactionSubmission(t *testing.T) {
 }
 
 func TestPhase7NodeFailsClosedWithoutGenesisConfiguration(t *testing.T) {
+	setNodeTestIdentityKey(t)
 	cfg := DefaultConfig(t.TempDir())
 	cfg.NetworkName = tokenomics.Phase7NetworkName
 	cfg.ListenAddress = "127.0.0.1:0"
@@ -110,6 +124,7 @@ func TestPhase7NodeFailsClosedWithoutGenesisConfiguration(t *testing.T) {
 }
 
 func TestPhase7NodeFailsClosedOnCommitmentMismatch(t *testing.T) {
+	setNodeTestIdentityKey(t)
 	dir := t.TempDir()
 	gs := nodePhase7TestState()
 	data, err := json.Marshal(gs)
@@ -135,6 +150,7 @@ func TestPhase7NodeFailsClosedOnCommitmentMismatch(t *testing.T) {
 }
 
 func TestPhase7NodeLoadsGenesisAndCommitment(t *testing.T) {
+	setNodeTestIdentityKey(t)
 	dir := t.TempDir()
 	gs := nodePhase7TestState()
 	data, err := json.Marshal(gs)
@@ -163,5 +179,41 @@ func TestPhase7NodeLoadsGenesisAndCommitment(t *testing.T) {
 	defer n.Stop()
 	if n.Chain().Supply() != tokenomics.ExpectedGenesisTotal() || n.Chain().MiningIssued() != 0 {
 		t.Fatalf("unexpected Phase 7 supply: %d/%d", n.Chain().Supply(), n.Chain().MiningIssued())
+	}
+}
+
+func TestTransportConfigurationFailsClosedForPlaintextPublicAPI(t *testing.T) {
+	cfg := DefaultConfig(t.TempDir())
+	cfg.APIListenAddress = "0.0.0.0:8080"
+	if err := cfg.ValidateTransport(); err == nil {
+		t.Fatal("plaintext public API configuration accepted")
+	}
+}
+
+func TestTransportConfigurationRequiresTLSMaterial(t *testing.T) {
+	cfg := DefaultConfig(t.TempDir())
+	cfg.APIUseTLS = true
+	if err := cfg.ValidateTransport(); err == nil {
+		t.Fatal("API TLS accepted without certificate/key")
+	}
+	cfg = DefaultConfig(t.TempDir())
+	cfg.P2PUseTLS = true
+	if err := cfg.ValidateTransport(); err == nil {
+		t.Fatal("P2P TLS accepted without certificate/key/CA")
+	}
+}
+
+func TestConfigPermissionsFailClosed(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	cfg := DefaultConfig(dir)
+	if err := SaveDefaultConfig(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadConfig(path, DefaultConfig(dir)); err == nil {
+		t.Fatal("insecure config permissions accepted")
 	}
 }

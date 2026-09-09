@@ -64,6 +64,11 @@ func (s *Store) replay() error {
 	if _, err := s.file.Seek(0, io.SeekStart); err != nil {
 		return err
 	}
+	info, err := s.file.Stat()
+	if err != nil {
+		return err
+	}
+	fileSize := info.Size()
 	r := bufio.NewReader(s.file)
 	offset := int64(0)
 	for {
@@ -73,6 +78,13 @@ func (s *Store) replay() error {
 			break
 		}
 		if err != nil {
+			// A process crash can leave only a suffix of the final header on
+			// disk. It is safe to discard that incomplete tail because no
+			// complete record follows it. Genuine corruption in a complete
+			// record remains fatal below.
+			if offset+int64(n) == fileSize {
+				return s.truncateTail(offset)
+			}
 			return fmt.Errorf("database corruption at offset %d: incomplete record header", offset)
 		}
 		if string(hdr[:8]) != magic {
@@ -88,7 +100,11 @@ func (s *Store) replay() error {
 			return fmt.Errorf("database corruption at offset %d: oversized record", offset)
 		}
 		payload := make([]byte, length)
-		if _, err := io.ReadFull(r, payload); err != nil {
+		n, err = io.ReadFull(r, payload)
+		if err != nil {
+			if offset+int64(len(hdr))+int64(n) == fileSize {
+				return s.truncateTail(offset)
+			}
 			return fmt.Errorf("database corruption at offset %d: incomplete payload", offset)
 		}
 		if crc32.ChecksumIEEE(payload) != wantCRC {
@@ -111,9 +127,22 @@ func (s *Store) replay() error {
 		}
 		offset += int64(len(hdr)) + int64(length)
 	}
-	_, err := s.file.Seek(0, io.SeekEnd)
+	_, err = s.file.Seek(0, io.SeekEnd)
 	return err
 }
+func (s *Store) truncateTail(offset int64) error {
+	if err := s.file.Truncate(offset); err != nil {
+		return fmt.Errorf("truncate incomplete journal tail at offset %d: %w", offset, err)
+	}
+	if err := s.file.Sync(); err != nil {
+		return fmt.Errorf("sync recovered journal tail: %w", err)
+	}
+	if _, err := s.file.Seek(0, io.SeekEnd); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s *Store) appendRecord(typ byte, payload []byte) error {
 	if len(payload) > maxRecord {
 		return errors.New("record too large")

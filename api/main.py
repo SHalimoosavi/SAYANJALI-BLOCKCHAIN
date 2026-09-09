@@ -1,5 +1,9 @@
 """
-FastAPI application entrypoint for SAYANJALI BLOCKCHAIN.
+FastAPI reference/oracle application for SAYANJALI BLOCKCHAIN.
+
+This Python service is retained for protocol compatibility, research, and
+regression testing. The Go `cmd/syjd` implementation is the production-track
+node. Do not expose this Python API as the production network API.
 
 Run directly with:
     python -m api.main
@@ -44,14 +48,14 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="SAYANJALI BLOCKCHAIN Node API",
     description=(
-        "REST API for the SAYANJALI BLOCKCHAIN MVP, powering the SYJ Token "
-        "network operated by SAYANJALI NEXUS PRIVATE LIMITED."
+        "Reference/oracle REST API for protocol compatibility and regression "
+        "testing. The Go syjd node is the production-track implementation."
     ),
-    version="0.2.0-mvp",
+    version="reference",
     lifespan=lifespan,
 )
 
-# CORS is permissive for the MVP so a locally-hosted explorer/dashboard on
+# CORS remains permissive for the reference implementation so local
 # any origin (e.g. a Termux-hosted frontend) can talk to the node freely.
 # Tighten this before any production/mainnet deployment.
 app.add_middleware(

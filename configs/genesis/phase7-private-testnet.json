@@ -1,0 +1,13 @@
+{
+  "network_name": "sayanjali-syj-phase7-v1",
+  "environment": "private-testnet",
+  "genesis_state_version": "1",
+  "tokenomics_version": "1",
+  "allocations": [
+    {"category":"presale","address":"SYJc7181103b1e2cc71112a1517e1fe6c11bf1420a9","amount_base_units":7200000000000000},
+    {"category":"treasury","address":"SYJ3bc4761687ea7f2513642fb94eb44a1e1d3dc2d4","amount_base_units":5760000000000000},
+    {"category":"ecosystem","address":"SYJ69cdd15b3450cecd1713bba9667af43f73b468ec","amount_base_units":3600000000000000},
+    {"category":"liquidity","address":"SYJ20f05c8b84682cac983a0508689257f51ce1c73b","amount_base_units":4320000000000000},
+    {"category":"team","address":"SYJec01044d9a6b32e7afdfbc34e845b3056308b3d9","amount_base_units":7920000000000000}
+  ]
+}

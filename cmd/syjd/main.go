@@ -40,6 +40,14 @@ func authedRequest(method, url, token string) (*http.Response, error) {
 	return http.DefaultClient.Do(req)
 }
 
+func apiBaseURL(cfg node.Config) string {
+	scheme := "http"
+	if cfg.APIUseTLS {
+		scheme = "https"
+	}
+	return scheme + "://" + cfg.APIListenAddress
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		usage()
@@ -85,7 +93,13 @@ func main() {
 		}
 		api := n.ServeAPI()
 		go func() {
-			if err := api.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			var err error
+			if cfg.APIUseTLS {
+				err = api.ListenAndServeTLS(cfg.APITLSCertFile, cfg.APITLSKeyFile)
+			} else {
+				err = api.ListenAndServe()
+			}
+			if err != nil && err != http.ErrServerClosed {
 				n.Status()
 			}
 		}()
@@ -105,7 +119,7 @@ func main() {
 		if err != nil {
 			fatal(err)
 		}
-		resp, err := authedRequest(http.MethodPost, "http://"+cfg.APIListenAddress+"/shutdown", cfg.APIAuthToken)
+		resp, err := authedRequest(http.MethodPost, apiBaseURL(cfg)+"/shutdown", cfg.APIAuthToken)
 		if err != nil {
 			fatal(err)
 		}
@@ -124,7 +138,7 @@ func main() {
 		if err != nil {
 			fatal(err)
 		}
-		resp, err := authedRequest(http.MethodPost, "http://"+cfg.APIListenAddress+"/mine", cfg.APIAuthToken)
+		resp, err := authedRequest(http.MethodPost, apiBaseURL(cfg)+"/mine", cfg.APIAuthToken)
 		if err != nil {
 			fatal(err)
 		}
@@ -148,7 +162,7 @@ func main() {
 		if err != nil {
 			fatal(err)
 		}
-		resp, err := http.Get("http://" + cfg.APIListenAddress + "/status")
+		resp, err := http.Get(apiBaseURL(cfg) + "/status")
 		if err != nil {
 			fatal(err)
 		}
@@ -172,7 +186,7 @@ func main() {
 		if err != nil {
 			fatal(err)
 		}
-		resp, err := http.Get("http://" + cfg.APIListenAddress + "/peers")
+		resp, err := http.Get(apiBaseURL(cfg) + "/peers")
 		if err != nil {
 			fatal(err)
 		}

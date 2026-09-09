@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"sort"
 	"sync"
 
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/block"
@@ -132,8 +133,8 @@ func validateNext(b *block.Block, prefix []*block.Block, cfg protocol.Difficulty
 	if b.PreviousHash != p.Hash {
 		return errors.New("previous hash mismatch")
 	}
-	if b.Timestamp <= p.Timestamp {
-		return errors.New("timestamp must increase")
+	if err := validateTimestamp(b.Timestamp, prefix); err != nil {
+		return err
 	}
 	var reward uint64
 	var ok bool
@@ -172,6 +173,46 @@ func validateNext(b *block.Block, prefix []*block.Block, cfg protocol.Difficulty
 // complete 10-block epoch boundary. Before then, the previous mineable
 // difficulty remains in force. This keeps the Go node from feeding a short
 // window into the frozen Python Fraction-based retarget routine.
+const (
+	// TimestampFutureStepSeconds is a deterministic consensus bound on how
+	// far a block may advance beyond the parent/median time. It is deliberately
+	// expressed only in terms of chain history so all nodes make the same
+	// consensus decision without depending on their local wall clocks.
+	TimestampFutureStepSeconds = int64(4) * protocol.TargetBlockTimeSeconds
+	TimestampMTPWindow         = 11
+)
+
+func validateTimestamp(timestamp float64, prefix []*block.Block) error {
+	if len(prefix) == 0 {
+		return errors.New("timestamp validation requires a parent")
+	}
+	if timestamp != timestamp || timestamp < 0 || timestamp > float64(^uint64(0)) {
+		return errors.New("invalid block timestamp")
+	}
+	parent := prefix[len(prefix)-1].Timestamp
+	if timestamp <= parent {
+		return errors.New("timestamp must increase")
+	}
+	start := len(prefix) - TimestampMTPWindow
+	if start < 0 {
+		start = 0
+	}
+	vals := make([]float64, 0, len(prefix)-start)
+	for i := start; i < len(prefix); i++ {
+		vals = append(vals, prefix[i].Timestamp)
+	}
+	sort.Slice(vals, func(i, j int) bool { return vals[i] < vals[j] })
+	mtp := vals[len(vals)/2]
+	if timestamp <= mtp {
+		return errors.New("timestamp must be greater than median-time-past")
+	}
+	max := parent + float64(TimestampFutureStepSeconds)
+	if timestamp > max {
+		return fmt.Errorf("timestamp exceeds deterministic future-time bound %.0f", max)
+	}
+	return nil
+}
+
 func requiredNextDifficulty(prefix []*block.Block, cfg protocol.DifficultyConfig) (int, error) {
 	if len(prefix) == 0 {
 		return 4, nil
@@ -365,10 +406,8 @@ func transactionsValid(b *block.Block, reward uint64) error {
 	}
 	coin := 0
 	for _, tx := range b.Transactions {
-		if err := tx.Validate(); err != nil { // coinbase is validated structurally below because tx.Validate intentionally allows no positive genesis only
-			if tx.Sender != protocol.CoinbaseSender {
-				return err
-			}
+		if err := tx.Validate(); err != nil {
+			return fmt.Errorf("invalid transaction: %w", err)
 		}
 		if tx.Sender == protocol.CoinbaseSender {
 			coin++

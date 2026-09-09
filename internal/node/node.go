@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/block"
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/chain"
@@ -37,12 +38,25 @@ type Config struct {
 	Phase7GenesisStatePath  string   `json:"phase7_genesis_state_path,omitempty"`
 	Phase7GenesisCommitment string   `json:"phase7_genesis_commitment,omitempty"`
 	APIAuthToken            string   `json:"api_auth_token,omitempty"`
+	APIUseTLS               bool     `json:"api_use_tls,omitempty"`
+	APIRequireTLS           bool     `json:"api_require_tls,omitempty"`
+	APITLSCertFile          string   `json:"api_tls_cert_file,omitempty"`
+	APITLSKeyFile           string   `json:"api_tls_key_file,omitempty"`
+	P2PUseTLS               bool     `json:"p2p_use_tls,omitempty"`
+	P2PTLSCertFile          string   `json:"p2p_tls_cert_file,omitempty"`
+	P2PTLSKeyFile           string   `json:"p2p_tls_key_file,omitempty"`
+	P2PTLSCAFile            string   `json:"p2p_tls_ca_file,omitempty"`
+	P2PTLSServerName        string   `json:"p2p_tls_server_name,omitempty"`
 }
 
 func DefaultConfig(dataDir string) Config {
 	return Config{DataDir: dataDir, NetworkName: "sayanjali-mainnet-mvp", ListenAddress: "127.0.0.1:3030", AdvertisedAddress: "127.0.0.1:3030", MaxPeers: 32, APIListenAddress: "127.0.0.1:8080", MempoolMax: 1000, LogLevel: "INFO"}
 }
 func LoadConfig(path string, defaults Config) (Config, error) {
+	info, statErr := os.Stat(path)
+	if statErr == nil && info.Mode().Perm()&0077 != 0 {
+		return defaults, fmt.Errorf("config file %s has insecure permissions %04o; require owner-only access", path, info.Mode().Perm())
+	}
 	b, e := os.ReadFile(path)
 	if os.IsNotExist(e) {
 		return defaults, nil
@@ -88,7 +102,10 @@ func SaveDefaultConfig(path string, c Config) error {
 	if e != nil {
 		return e
 	}
-	return os.WriteFile(path, b, 0600)
+	if err := os.WriteFile(path, b, 0600); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0600)
 }
 
 type Node struct {
@@ -107,12 +124,44 @@ type Node struct {
 	running  atomic.Bool
 }
 
+func (c Config) ValidateTransport() error {
+	if c.APIRequireTLS && !c.APIUseTLS {
+		return errors.New("API TLS is required but api_use_tls is disabled")
+	}
+	if c.APIUseTLS {
+		if c.APITLSCertFile == "" || c.APITLSKeyFile == "" {
+			return errors.New("API TLS requires certificate and key files")
+		}
+	}
+	if !c.APIUseTLS && !isLoopbackListenAddress(c.APIListenAddress) {
+		return errors.New("API must use TLS when listening on a non-loopback address")
+	}
+	if c.P2PUseTLS {
+		if c.P2PTLSCertFile == "" || c.P2PTLSKeyFile == "" || c.P2PTLSCAFile == "" {
+			return errors.New("P2P TLS requires certificate, key, and CA files")
+		}
+	}
+	return nil
+}
+
+func isLoopbackListenAddress(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
 func New(cfg Config) *Node {
 	h := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{})
 	return &Node{cfg: cfg, log: slog.New(h), done: make(chan struct{})}
 }
 func (n *Node) Start(ctx context.Context) error {
 	if err := os.MkdirAll(n.cfg.DataDir, 0700); err != nil {
+		return err
+	}
+	if err := n.cfg.ValidateTransport(); err != nil {
 		return err
 	}
 	id, created, err := identity.LoadOrCreate(filepath.Join(n.cfg.DataDir, "identity"))
@@ -262,7 +311,11 @@ func MineNext(ch *chain.Chain, receiver string, txs []transaction.Transaction) (
 	if !ok {
 		return nil, errors.New("no reward remains")
 	}
-	coin := transaction.Transaction{Sender: protocol.CoinbaseSender, Receiver: receiver, AmountBaseUnits: reward, Timestamp: float64(time.Now().UnixNano()) / 1e9}
+	// Consensus timestamps are deterministic relative to the active chain.
+	// The local wall clock is not allowed to manufacture a timestamp that peers
+	// would reject under the chain-history future-time bound.
+	timestamp := tip.Timestamp + float64(protocol.TargetBlockTimeSeconds)
+	coin := transaction.Transaction{Sender: protocol.CoinbaseSender, Receiver: receiver, AmountBaseUnits: reward, Timestamp: timestamp}
 	all := append([]transaction.Transaction{coin}, txs...)
 	d, err := nextDifficulty(ch)
 	if err != nil {

@@ -3,6 +3,8 @@ package node
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +15,11 @@ import (
 
 func startTestAPI(t *testing.T, token string) (*Node, string, func()) {
 	t.Helper()
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SYJ_IDENTITY_ENCRYPTION_KEY", hex.EncodeToString(b))
 	dir := t.TempDir()
 	cfg := DefaultConfig(dir)
 	cfg.ListenAddress = "127.0.0.1:0"

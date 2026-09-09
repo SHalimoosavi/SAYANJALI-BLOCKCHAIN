@@ -3,19 +3,26 @@ package node
 import (
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/codec"
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/security"
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/transaction"
 )
 
-type API struct{ n *Node }
+type API struct {
+	n      *Node
+	rateMu sync.Mutex
+	rates  map[string]*security.TokenBucket
+}
 
 func (n *Node) ServeAPI() *http.Server {
 	mux := http.NewServeMux()
-	a := &API{n: n}
+	a := &API{n: n, rates: make(map[string]*security.TokenBucket)}
 	mux.HandleFunc("/health", a.health)
 	mux.HandleFunc("/status", a.status)
 	mux.HandleFunc("/peers", a.peers)
@@ -45,6 +52,10 @@ func (a *API) withAuth(next http.HandlerFunc) http.HandlerFunc {
 // constant-time comparison (reusing the Phase 6.5 security primitive) and
 // writes an error response and returns false if the check fails.
 func (a *API) requireAuth(w http.ResponseWriter, r *http.Request) bool {
+	if !a.allowMutationRequest(r) {
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "mutating API rate limit exceeded"})
+		return false
+	}
 	token := a.n.cfg.APIAuthToken
 	if token == "" {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "mutating API access is disabled: no api_auth_token configured"})
@@ -63,6 +74,21 @@ func (a *API) requireAuth(w http.ResponseWriter, r *http.Request) bool {
 	}
 	return true
 }
+func (a *API) allowMutationRequest(r *http.Request) bool {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil || host == "" {
+		host = r.RemoteAddr
+	}
+	a.rateMu.Lock()
+	defer a.rateMu.Unlock()
+	b := a.rates[host]
+	if b == nil {
+		b, _ = security.NewTokenBucket(20, 40, time.Now())
+		a.rates[host] = b
+	}
+	return b.Allow(time.Now(), 1)
+}
+
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -207,3 +233,6 @@ func errText(reason string, e error) string {
 	}
 	return errors.New("operation failed").Error()
 }
+
+// APIUsesTLS reports whether the configured API must be served over HTTPS.
+func (n *Node) APIUsesTLS() bool { return n.cfg.APIUseTLS }

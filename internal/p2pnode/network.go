@@ -2,11 +2,14 @@ package p2pnode
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -47,6 +50,11 @@ type Config struct {
 	AllowMulticast       bool
 	AllowDNS             bool
 	Identity             identity.Identity
+	UseTLS               bool
+	TLSCertFile          string
+	TLSKeyFile           string
+	TLSCAFile            string
+	TLSServerName        string
 }
 type Network struct {
 	cfg             Config
@@ -225,9 +233,45 @@ func (n *Network) releaseHandshake(addr net.Addr) {
 	}
 }
 
+func validateP2PTLSCA(path string) error {
+	if path == "" {
+		return errors.New("P2P TLS CA file is required")
+	}
+	_, err := loadP2PTrustRoots(path)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func loadP2PTrustRoots(path string) (*x509.CertPool, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read P2P TLS CA file: %w", err)
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(b) {
+		return nil, errors.New("P2P TLS CA file contains no valid certificates")
+	}
+	return roots, nil
+}
+
 func (n *Network) Start(ctx context.Context) error {
 	n.ctx, n.cancel = context.WithCancel(ctx)
-	ln, err := net.Listen("tcp", n.cfg.ListenAddress)
+	var ln net.Listener
+	var err error
+	if n.cfg.UseTLS {
+		cert, err := tls.LoadX509KeyPair(n.cfg.TLSCertFile, n.cfg.TLSKeyFile)
+		if err != nil {
+			return fmt.Errorf("load P2P TLS certificate: %w", err)
+		}
+		if err := validateP2PTLSCA(n.cfg.TLSCAFile); err != nil {
+			return err
+		}
+		ln, err = tls.Listen("tcp", n.cfg.ListenAddress, &tls.Config{MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{cert}})
+	} else {
+		ln, err = net.Listen("tcp", n.cfg.ListenAddress)
+	}
 	if err != nil {
 		return err
 	}
@@ -340,7 +384,21 @@ func (n *Network) seedLoop(addr string) {
 
 		var c net.Conn
 		for _, endpoint := range endpoints {
-			c, err = net.DialTimeout("tcp", endpoint, 5*time.Second)
+			if n.cfg.UseTLS {
+				roots, rootErr := loadP2PTrustRoots(n.cfg.TLSCAFile)
+				if rootErr != nil {
+					n.cfg.Logger.Warn("P2P TLS trust configuration invalid", "error", rootErr)
+					break
+				}
+				serverName := n.cfg.TLSServerName
+				if serverName == "" {
+					serverName, _, _ = net.SplitHostPort(endpoint)
+				}
+				dialer := &tls.Dialer{NetDialer: &net.Dialer{Timeout: 5 * time.Second}, Config: &tls.Config{MinVersion: tls.VersionTLS13, RootCAs: roots, ServerName: serverName, InsecureSkipVerify: false}}
+				c, err = dialer.DialContext(n.ctx, "tcp", endpoint)
+			} else {
+				c, err = net.DialTimeout("tcp", endpoint, 5*time.Second)
+			}
 			if err == nil {
 				break
 			}

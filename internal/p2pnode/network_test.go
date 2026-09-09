@@ -2,6 +2,7 @@ package p2pnode
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	"log/slog"
@@ -26,6 +27,11 @@ import (
 
 func testNetwork(t *testing.T, seed []string) (*Network, func()) {
 	t.Helper()
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SYJ_IDENTITY_ENCRYPTION_KEY", hex.EncodeToString(b))
 	dir := t.TempDir()
 	id, _, err := identity.LoadOrCreate(dir + "/identity")
 	if err != nil {
@@ -132,9 +138,10 @@ func TestTwoNodeBlockPropagation(t *testing.T) {
 		t.Fatal("nodes did not handshake")
 	}
 	receiver := b.cfg.Identity.Address
-	tx := transaction.Transaction{Sender: "SYJ-COINBASE-0000000000000000000000000000", Receiver: receiver, AmountBaseUnits: 5_000_000_000, Timestamp: float64(time.Now().UnixNano()) / 1e9}
 	g, _ := block.Genesis()
-	bld, err := block.New(1, g.Hash, tx.Timestamp, 0, 4, []transaction.Transaction{tx})
+	blockTimestamp := g.Timestamp + float64(protocol.TargetBlockTimeSeconds)
+	tx := transaction.Transaction{Sender: "SYJ-COINBASE-0000000000000000000000000000", Receiver: receiver, AmountBaseUnits: 5_000_000_000, Timestamp: blockTimestamp}
+	bld, err := block.New(1, g.Hash, blockTimestamp, 0, 4, []transaction.Transaction{tx})
 	if err != nil {
 		t.Fatal(err)
 	}

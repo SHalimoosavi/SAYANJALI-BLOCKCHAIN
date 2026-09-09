@@ -212,3 +212,100 @@ func TestConfirmedTransactionIndexSurvivesRestart(t *testing.T) {
 		t.Fatal("confirmed transaction index was not rebuilt after restart")
 	}
 }
+
+func TestCoinbaseConsensusValidationRejectsMalformedTransaction(t *testing.T) {
+	cases := []struct {
+		name   string
+		mutate func(*transaction.Transaction)
+	}{
+		{"invalid receiver", func(tx *transaction.Transaction) { tx.Receiver = "not-an-address" }},
+		{"invalid hash", func(tx *transaction.Transaction) { tx.TxHash = "00" }},
+		{"unexpected public key", func(tx *transaction.Transaction) { tx.SenderPublicKey = "00" }},
+		{"unexpected signature", func(tx *transaction.Transaction) { tx.Signature = "00" }},
+		{"invalid sender", func(tx *transaction.Transaction) { tx.Sender = "SYJ-invalid" }},
+		{"incorrect reward", func(tx *transaction.Transaction) { tx.AmountBaseUnits-- }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			st, err := storage.Open(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer st.Close()
+			c, err := Open(st)
+			if err != nil {
+				t.Fatal(err)
+			}
+			b := mineTestBlock(t, c.Tip(), "SYJaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", c.Tip().Timestamp+31)
+			tc.mutate(&b.Transactions[0])
+			if tc.name == "invalid receiver" || tc.name == "incorrect reward" {
+				if err := b.Recompute(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if ok, _, err := c.Accept(b); err == nil || ok {
+				t.Fatalf("malformed coinbase accepted: ok=%v err=%v", ok, err)
+			}
+		})
+	}
+}
+
+func TestCoinbaseConsensusValidationAcceptsValidCoinbase(t *testing.T) {
+	st, err := storage.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	c, err := Open(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := mineTestBlock(t, c.Tip(), "SYJaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", c.Tip().Timestamp+31)
+	if ok, reason, err := c.Accept(b); err != nil || !ok || reason != "best" {
+		t.Fatalf("valid coinbase rejected: ok=%v reason=%s err=%v", ok, reason, err)
+	}
+}
+
+func TestTimestampConsensusRejectsEqualOlderAndExcessiveFutureTime(t *testing.T) {
+	st, err := storage.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	c, err := Open(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent := c.Tip()
+	for _, tc := range []struct {
+		name string
+		ts   float64
+	}{
+		{"equal", parent.Timestamp},
+		{"older", parent.Timestamp - 1},
+		{"excessive future", parent.Timestamp + float64(TimestampFutureStepSeconds) + 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b := mineTestBlock(t, parent, "SYJaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", tc.ts)
+			if ok, _, err := c.Accept(b); err == nil || ok {
+				t.Fatalf("timestamp %s accepted: ok=%v err=%v", tc.name, ok, err)
+			}
+		})
+	}
+}
+
+func TestTimestampConsensusAcceptsValidAndMTPCompliantBlock(t *testing.T) {
+	st, err := storage.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	c, err := Open(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := mineTestBlock(t, c.Tip(), "SYJaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", c.Tip().Timestamp+31)
+	if ok, _, err := c.Accept(b); err != nil || !ok {
+		t.Fatalf("valid timestamp rejected: ok=%v err=%v", ok, err)
+	}
+}

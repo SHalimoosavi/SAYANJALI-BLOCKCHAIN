@@ -16,7 +16,15 @@ The legacy Python HTTP network remains reference/prototype behavior. It is not w
 
 ## 2. Transport
 
-The v1.0 wire profile uses a long-lived TCP connection. TLS is **not** part of this wire version; confidentiality is not provided by the wire protocol. Peer identity is authenticated at the message layer during the handshake. A future secure-transport profile MUST NOT silently change the v1.0 frame grammar.
+The v1.0 application wire profile defines the existing long-lived framed
+connection. TLS is deliberately **outside** the v1.0 application wire
+grammar: the Go production-track node may wrap the exact same byte stream in
+TLS 1.3 for transport confidentiality and peer endpoint authentication. The
+TLS wrapper MUST NOT add fields, alter frame sizes, change message IDs, or
+change HELLO/HELLO_ACK encoding. Peer identity remains authenticated at the
+existing application handshake. Local private testnets may run the frozen
+wire profile over loopback TCP; public/production deployments should enable
+the TLS transport wrapper.
 
 Each connection has one ordered inbound and outbound byte stream. Implementations MUST bound concurrent connections and MUST apply handshake and idle timeouts at the session layer.
 

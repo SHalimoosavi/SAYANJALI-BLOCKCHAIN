@@ -198,11 +198,20 @@ validation; - have strictly greater accumulated work.
 ## 27. Timestamp rules
 
 A non-genesis block timestamp must be strictly greater than the previous
-block timestamp.
+block timestamp. The consensus validator also computes median-time-past from
+the most recent up to 11 accepted block timestamps and requires the new
+timestamp to be greater than that median. Because the existing consensus rule
+already requires strictly increasing timestamps, the MTP check is redundant
+for well-formed chains but is retained as an explicit consensus invariant.
 
-Future-time bound: **UNDEFINED**.
+A deterministic future-step bound is also enforced: the new timestamp may not
+exceed `previous_timestamp + 4 * TargetBlockTimeSeconds`. With the current
+30-second target, this is at most 120 seconds ahead of the parent. This is
+deliberately a chain-history bound, not a local wall-clock check, so nodes do
+not disagree because their clocks differ.
 
-Median-time-past: **UNDEFINED**.
+Mining selects a deterministic next timestamp at one target interval after the
+active tip, keeping locally-created blocks inside this bound.
 
 ## 28. Mempool rules
 
@@ -310,4 +319,7 @@ The machine-readable compatibility package is under `protocol/test-vectors/`. It
 
 Canonical deterministic JSON is the current `json.dumps(..., sort_keys=True, separators=(",", ":"), default=str)` behavior, encoded as UTF-8 before signing/hashing. Numeric representation and field presence remain those produced by the existing Python payload builders; this phase does not introduce a new serializer.
 
-The vectors are compatibility artifacts, not a protocol redesign. Undefined items such as genesis allocation, transaction nonce, chain-wide protocol version, production P2P framing and future timestamp/MTP rules remain undefined.
+The vectors are compatibility artifacts, not a serializer redesign. The
+Phase 7 timestamp hardening adds a consensus validation rule without changing
+block serialization, transaction serialization, hashing, or the vector payload
+format. Genesis allocation remains a separate Phase 7 economic state.
