@@ -91,3 +91,35 @@ The full suite for this development checkpoint completed with 244 passing tests 
 Phase 3 adds focused lifecycle/peer-health/protocol tests and a real three-process local testnet scenario. The three-node test verifies transitive discovery, authenticated peer links, transaction propagation through an intermediate node, block propagation, chain-tip/work convergence, balance convergence, and the 720,000,000 SYJ supply ceiling.
 
 The local testnet uses isolated SQLite databases and independent HTTP ports, so it does not modify a developer's chain database.
+
+## Go production-track validation
+
+The production-track implementation is the Go node under `cmd/syjd` and `internal/`. Run:
+
+```bash
+go test ./...
+go vet ./...
+go build ./...
+```
+
+On a host that supports it, also run:
+
+```bash
+go test -race ./...
+```
+
+`go test -race` is a host capability check, not a consensus requirement. Android/arm64 toolchains may not support the race detector.
+
+## Phase 7 three-node testnet
+
+The authoritative local harness is:
+
+```bash
+scripts/testnet/run-3-node.sh
+```
+
+It uses `sayanjali-syj-phase7-v1`, the deterministic private-testnet GenesisState fixture, encrypted node identities, per-node API credentials, authenticated mutation endpoints, P2P discovery, propagation, transaction inclusion, convergence, restart, and cleanup. Runtime state is created under `.phase6-testnet/` and removed by the harness on exit.
+
+## Python reference/oracle tests
+
+The Python implementation remains the protocol reference/oracle. It is not the production node. Its test suite is still useful for compatibility and regression coverage, but the Go validation suite is the release gate for the production-track implementation.

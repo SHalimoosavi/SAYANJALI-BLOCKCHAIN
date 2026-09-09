@@ -1,3 +1,24 @@
+# Current Production-Track Status (Phase 7)
+
+The **Go node (`cmd/syjd`) is the production-track implementation**. The Python implementation under `blockchain/` and `api/` is retained as the **reference/oracle implementation** for protocol compatibility, vectors, research, and regression testing; it is not the production network API. Do not expose the Python API as a production node.
+
+Phase 7 economic state is separate from the frozen historical block-0 identity:
+
+- Maximum supply: **720,000,000 SYJ** = `72,000,000,000,000,000` base units
+- Genesis economic allocation: **288,000,000 SYJ** = `28,800,000,000,000,000` base units
+- Mining allocation: **432,000,000 SYJ** = `43,200,000,000,000,000` base units
+- Network identity: `sayanjali-syj-phase7-v1`
+
+Mutating Go API endpoints require a bearer token. For any non-loopback API deployment, TLS is mandatory. Production P2P deployments should enable the TLS transport wrapper; the frozen Phase 5.2 application-level P2P wire format remains unchanged.
+
+Node identity private keys are encrypted at rest using AES-256-GCM with the externally supplied `SYJ_IDENTITY_ENCRYPTION_KEY` (32 random bytes encoded as 64 hex characters). The key must not be committed or placed in repository configuration.
+
+The isolated Phase 7 private-testnet fixture is `configs/genesis/phase7-private-testnet.state.json`, and the three-node harness is `scripts/testnet/run-3-node.sh`. The fixture contains deterministic test addresses only and is not a production custody configuration.
+
+**This repository is not a claim of mainnet readiness.** Public/mainnet deployment still requires operational TLS/certificate management, external secret management, production genesis/custody approval, infrastructure/CI controls, observability, and independent security review.
+
+---
+
 ![Python](https://img.shields.io/badge/python-3.13%2B-blue)
 ![FastAPI](https://img.shields.io/badge/framework-FastAPI-009688)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -757,3 +778,9 @@ Each node remains a single FastAPI listener in this release; set a unique `SYJ_P
 `GET /network/status` reports lifecycle, chain height/work, peer counts, mempool size, current difficulty, total SYJ supply in base units, and bounded propagation counters. `GET /network/peers` additionally reports runtime failure/backoff state and discovered capabilities.
 
 The maintenance loop is deliberately bounded and deterministic: it only contacts configured/known peers, skips peers in retry backoff, exchanges peer lists, and runs the existing accumulated-work synchronization logic. It does not scan the public internet.
+
+## Phase 6 — Go Production Node
+
+The repository now contains the first production-oriented Go node layer under `internal/node`, `internal/chain`, `internal/storage`, `internal/identity`, `internal/mempool`, and `internal/p2pnode`, with executable entrypoint `cmd/syjd`. The Phase 5.2 binary P2P codec remains frozen and is consumed rather than redesigned.
+
+See `docs/phase6/STATUS.md` and `docs/phase6/TESTNET.md` for implementation boundaries and local testnet operation.

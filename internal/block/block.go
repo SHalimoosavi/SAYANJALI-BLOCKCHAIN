@@ -14,6 +14,23 @@ type Block struct {
 }
 
 func New(index int64, previousHash string, timestamp float64, nonce uint64, difficulty int, txs []transaction.Transaction) (*Block, error) {
+	// Constructors may receive freshly-created transactions whose TxHash has
+	// not yet been materialized. The frozen hash algorithm is unchanged: we
+	// only populate the canonical transaction hash when it is absent. Existing
+	// hashes are preserved so malformed/inconsistent transactions remain
+	// detectable by validation. Copy the slice so construction does not mutate
+	// the caller's transaction collection.
+	normalized := append([]transaction.Transaction(nil), txs...)
+	for i := range normalized {
+		if normalized[i].TxHash == "" {
+			h, err := normalized[i].ComputeHash()
+			if err != nil {
+				return nil, err
+			}
+			normalized[i].TxHash = h
+		}
+	}
+	txs = normalized
 	hashes := make([]string, len(txs))
 	for i := range txs {
 		hashes[i] = txs[i].TxHash
