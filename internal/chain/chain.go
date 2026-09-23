@@ -9,29 +9,55 @@ import (
 
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/block"
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/consensus"
+	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/networkid"
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/state"
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/storage"
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/tokenomics"
+	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/transaction"
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/wallet"
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/pkg/protocol"
 )
 
 type Chain struct {
-	mu            sync.RWMutex
-	store         *storage.Store
-	blocks        map[string]*block.Block
-	activeTip     string
-	active        []*block.Block
-	balances      state.Balances
-	supply        uint64
-	genesisSupply uint64
-	miningIssued  uint64
-	genesisState  *tokenomics.GenesisState
-	confirmedTx   map[string]struct{}
+	mu              sync.RWMutex
+	store           *storage.Store
+	blocks          map[string]*block.Block
+	activeTip       string
+	active          []*block.Block
+	balances        state.Balances
+	supply          uint64
+	genesisSupply   uint64
+	miningIssued    uint64
+	genesisState    *tokenomics.GenesisState
+	confirmedTx     map[string]struct{}
+	protocolVersion uint8
+	networkID       string
+	networkName     string
+	nonces          map[string]uint64
+	reorgCandidates []transaction.Transaction
 }
 
 func Open(store *storage.Store) (*Chain, error) {
-	return open(store, nil)
+	return openWithProtocol(store, nil, 1, "", "")
+}
+
+// OpenV2WithGenesisState opens a V2 consensus chain bound to an explicit network identity.
+// The historical block genesis remains frozen; V2 is separated by transaction rules and network identity.
+func OpenV2WithGenesisState(store *storage.Store, genesisState tokenomics.GenesisState, networkID, networkName string) (*Chain, error) {
+	if err := genesisState.Validate(wallet.ValidAddress); err != nil {
+		return nil, err
+	}
+	if err := networkid.ValidateHex64(networkID); err != nil {
+		return nil, err
+	}
+	wireName, err := networkid.WireNetworkName(networkID)
+	if err != nil {
+		return nil, err
+	}
+	if networkName != wireName {
+		return nil, errors.New("V2 network name does not match network id")
+	}
+	return openWithProtocol(store, &genesisState, 2, networkID, networkName)
 }
 
 // OpenWithGenesisState opens a Phase 7 economic chain while preserving the
@@ -41,16 +67,24 @@ func OpenWithGenesisState(store *storage.Store, genesisState tokenomics.GenesisS
 	if err := genesisState.Validate(wallet.ValidAddress); err != nil {
 		return nil, err
 	}
-	return open(store, &genesisState)
+	return openWithProtocol(store, &genesisState, 1, "", tokenomics.Phase7NetworkName)
 }
 
 func open(store *storage.Store, genesisState *tokenomics.GenesisState) (*Chain, error) {
+	return openWithProtocol(store, genesisState, 1, "", tokenomics.Phase7NetworkName)
+}
+
+func openWithProtocol(store *storage.Store, genesisState *tokenomics.GenesisState, protocolVersion uint8, networkID, networkName string) (*Chain, error) {
 	c := &Chain{
-		store:        store,
-		blocks:       make(map[string]*block.Block),
-		balances:     make(state.Balances),
-		confirmedTx:  make(map[string]struct{}),
-		genesisState: genesisState,
+		store:           store,
+		blocks:          make(map[string]*block.Block),
+		balances:        make(state.Balances),
+		confirmedTx:     make(map[string]struct{}),
+		genesisState:    genesisState,
+		protocolVersion: protocolVersion,
+		networkID:       networkID,
+		networkName:     networkName,
+		nonces:          make(map[string]uint64),
 	}
 	bs, err := store.AllBlocks()
 	if err != nil {
@@ -106,6 +140,9 @@ func ValidateChain(ch []*block.Block) error {
 }
 
 func (c *Chain) validateChain(ch []*block.Block) error {
+	if c.protocolVersion == 2 {
+		return validateChainV2(ch, c.genesisState, c.networkID)
+	}
 	return validateChainWithState(ch, c.genesisState)
 }
 
@@ -462,6 +499,9 @@ func (c *Chain) buildChain(tip string) ([]*block.Block, error) {
 	return rev, nil
 }
 func (c *Chain) replayState(ch []*block.Block) error {
+	if c.protocolVersion == 2 {
+		return c.replayStateV2(ch)
+	}
 	balances, genesisSupply, miningIssued, supply, err := replayBalances(ch, c.genesisState)
 	if err != nil {
 		return err
@@ -500,7 +540,11 @@ func (c *Chain) Accept(b *block.Block) (bool, string, error) {
 	if err := c.validateChain(prefix); err != nil {
 		return false, "invalid_ancestor", err
 	}
-	if err := validateNext(b, prefix, protocol.DefaultDifficultyConfig(), c.genesisState); err != nil {
+	if c.protocolVersion == 2 {
+		if err := validateNextV2(b, prefix, protocol.DefaultDifficultyConfig(), c.genesisState, c.networkID); err != nil {
+			return false, "invalid", err
+		}
+	} else if err := validateNext(b, prefix, protocol.DefaultDifficultyConfig(), c.genesisState); err != nil {
 		return false, "invalid", err
 	}
 	if err := c.store.SaveBlock(b); err != nil {
@@ -509,6 +553,30 @@ func (c *Chain) Accept(b *block.Block) (bool, string, error) {
 	c.blocks[b.Hash] = b
 	candidate := append(append([]*block.Block(nil), prefix...), b)
 	if work(candidate).Cmp(work(c.active)) > 0 {
+		if c.protocolVersion == 2 {
+			common := -1
+			limit := len(prefix)
+			if len(c.active) < limit {
+				limit = len(c.active)
+			}
+			for i := 0; i < limit; i++ {
+				if c.active[i].Hash == prefix[i].Hash {
+					common = i
+				} else {
+					break
+				}
+			}
+			c.reorgCandidates = c.reorgCandidates[:0]
+			if common >= 0 {
+				for i := common + 1; i < len(c.active); i++ {
+					for _, tx := range c.active[i].Transactions {
+						if tx.Sender != protocol.CoinbaseSender && tx.IsV2() {
+							c.reorgCandidates = append(c.reorgCandidates, tx)
+						}
+					}
+				}
+			}
+		}
 		if err := c.store.SetTip(b.Hash); err != nil {
 			return false, "storage", err
 		}
@@ -582,6 +650,16 @@ func (c *Chain) HasConfirmedTransaction(txHash string) bool {
 	return ok
 }
 
+// TakeReorgCandidates returns V2 transactions from the losing active branch.
+// The caller must revalidate them against the rebuilt winning-chain state before mempool admission.
+func (c *Chain) TakeReorgCandidates() []transaction.Transaction {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := append([]transaction.Transaction(nil), c.reorgCandidates...)
+	c.reorgCandidates = nil
+	return out
+}
+
 func (c *Chain) GenesisState() (tokenomics.GenesisState, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -590,9 +668,18 @@ func (c *Chain) GenesisState() (tokenomics.GenesisState, bool) {
 	}
 	return *c.genesisState, true
 }
-func (c *Chain) GenesisSupply() uint64 { c.mu.RLock(); defer c.mu.RUnlock(); return c.genesisSupply }
-func (c *Chain) MiningIssued() uint64  { c.mu.RLock(); defer c.mu.RUnlock(); return c.miningIssued }
-func (c *Chain) IsPhase7() bool        { c.mu.RLock(); defer c.mu.RUnlock(); return c.genesisState != nil }
+func (c *Chain) GenesisSupply() uint64  { c.mu.RLock(); defer c.mu.RUnlock(); return c.genesisSupply }
+func (c *Chain) MiningIssued() uint64   { c.mu.RLock(); defer c.mu.RUnlock(); return c.miningIssued }
+func (c *Chain) IsPhase7() bool         { c.mu.RLock(); defer c.mu.RUnlock(); return c.genesisState != nil }
+func (c *Chain) IsV2() bool             { c.mu.RLock(); defer c.mu.RUnlock(); return c.protocolVersion == 2 }
+func (c *Chain) ProtocolVersion() uint8 { c.mu.RLock(); defer c.mu.RUnlock(); return c.protocolVersion }
+func (c *Chain) NetworkID() string      { c.mu.RLock(); defer c.mu.RUnlock(); return c.networkID }
+func (c *Chain) NetworkName() string    { c.mu.RLock(); defer c.mu.RUnlock(); return c.networkName }
+func (c *Chain) NextNonce(address string) uint64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.nonces[address]
+}
 
 func (c *Chain) HeaderBytesAfter(locator [][32]byte, stop [32]byte, max int) [][]byte { return nil }
 func (c *Chain) ActiveHeaderHashes() [][32]byte {

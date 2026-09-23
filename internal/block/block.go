@@ -22,7 +22,15 @@ func New(index int64, previousHash string, timestamp float64, nonce uint64, diff
 	// the caller's transaction collection.
 	normalized := append([]transaction.Transaction(nil), txs...)
 	for i := range normalized {
-		if normalized[i].TxHash == "" {
+		if normalized[i].Version == transaction.V2Version {
+			if normalized[i].TxID == "" {
+				h, err := normalized[i].ComputeV2TxID()
+				if err != nil {
+					return nil, err
+				}
+				normalized[i].TxID = h
+			}
+		} else if normalized[i].TxHash == "" {
 			h, err := normalized[i].ComputeHash()
 			if err != nil {
 				return nil, err
@@ -33,7 +41,7 @@ func New(index int64, previousHash string, timestamp float64, nonce uint64, diff
 	txs = normalized
 	hashes := make([]string, len(txs))
 	for i := range txs {
-		hashes[i] = txs[i].TxHash
+		hashes[i] = txs[i].IdentityHash()
 	}
 	b := &Block{Header: Header{Index: index, PreviousHash: previousHash, Timestamp: timestamp, Nonce: nonce, Difficulty: difficulty, MerkleRoot: MerkleRoot(hashes)}, Transactions: txs}
 	h, _, err := HashHeader(b.Header)
@@ -47,7 +55,7 @@ func New(index int64, previousHash string, timestamp float64, nonce uint64, diff
 func (b *Block) Recompute() error {
 	hashes := make([]string, len(b.Transactions))
 	for i := range b.Transactions {
-		hashes[i] = b.Transactions[i].TxHash
+		hashes[i] = b.Transactions[i].IdentityHash()
 	}
 	b.MerkleRoot = MerkleRoot(hashes)
 	h, _, err := HashHeader(b.Header)
