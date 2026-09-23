@@ -29,6 +29,7 @@ import (
 )
 
 type Config struct {
+	ProtocolVersion      uint8
 	NetworkName          string
 	GenesisHash          string
 	NodeID               string
@@ -50,6 +51,7 @@ type Config struct {
 	AllowMulticast       bool
 	AllowDNS             bool
 	Identity             identity.Identity
+	V2Pool               *mempool.V2Pool
 	UseTLS               bool
 	TLSCertFile          string
 	TLSKeyFile           string
@@ -940,13 +942,29 @@ func (s *Session) acceptBlock(data []byte) error {
 		return errOr(reason, e)
 	}
 	if reason == "best" {
-		hashes := make([]string, 0)
+		ids := make([]string, 0)
 		for _, active := range s.n.ch.ChainCopy() {
 			for _, tx := range active.Transactions {
-				hashes = append(hashes, tx.TxHash)
+				ids = append(ids, tx.IdentityHash())
 			}
 		}
-		s.n.pool.RemoveHashes(hashes)
+		if s.n.ch.IsV2() && s.n.cfg.V2Pool != nil {
+			s.n.cfg.V2Pool.RemoveIDs(ids)
+			for _, tx := range s.n.ch.TakeReorgCandidates() {
+				if s.n.ch.HasConfirmedTransaction(tx.TxID) {
+					continue
+				}
+				next, err := s.n.cfg.V2Pool.ExpectedNonce(tx.Sender, s.n.ch.NextNonce(tx.Sender))
+				if err != nil {
+					continue
+				}
+				if err := s.n.cfg.V2Pool.Add(tx, next, s.n.ch.Balance(tx.Sender), s.n.ch.NetworkID()); err != nil {
+					continue
+				}
+			}
+		} else {
+			s.n.pool.RemoveHashes(ids)
+		}
 	}
 	s.n.propagateBlock(b, s.p.ID)
 	return nil
@@ -956,8 +974,30 @@ func (s *Session) acceptTx(data []byte) error {
 	if e != nil {
 		return e
 	}
-	if e = s.n.pool.Add(tx, s.n.ch.Balance); e != nil {
-		return e
+	if s.n.ch == nil {
+		return errors.New("chain unavailable")
+	}
+	if s.n.ch.IsV2() {
+		if s.n.cfg.V2Pool == nil {
+			return errors.New("V2 mempool is unavailable")
+		}
+		if err := tx.ValidateV2(s.n.ch.NetworkID()); err != nil {
+			return err
+		}
+		if s.n.ch.HasConfirmedTransaction(tx.TxID) {
+			return errors.New("transaction already confirmed")
+		}
+		next, err := s.n.cfg.V2Pool.ExpectedNonce(tx.Sender, s.n.ch.NextNonce(tx.Sender))
+		if err != nil {
+			return err
+		}
+		if err := s.n.cfg.V2Pool.Add(tx, next, s.n.ch.Balance(tx.Sender), s.n.ch.NetworkID()); err != nil {
+			return err
+		}
+	} else {
+		if e = s.n.pool.Add(tx, s.n.ch.Balance); e != nil {
+			return e
+		}
 	}
 	s.n.propagateTx(tx, s.p.ID)
 	return nil

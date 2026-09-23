@@ -14,6 +14,20 @@ import (
 // used by the existing Python implementation for persistence/API exchange.
 // Hashing remains governed exclusively by Transaction.ComputeHash().
 func transactionMap(t transaction.Transaction) map[string]any {
+	if t.Version == transaction.V2Version {
+		return map[string]any{
+			"amount_base_units": t.AmountBaseUnits,
+			"network_id":        t.NetworkID,
+			"nonce":             t.Nonce,
+			"receiver":          t.Receiver,
+			"sender":            t.Sender,
+			"sender_public_key": nilOrString(t.SenderPublicKey),
+			"signature":         nilOrString(t.Signature),
+			"timestamp":         t.Timestamp,
+			"tx_id":             t.TxID,
+			"version":           t.Version,
+		}
+	}
 	return map[string]any{
 		"sender": t.Sender, "receiver": t.Receiver, "amount_base_units": t.AmountBaseUnits,
 		"timestamp": t.Timestamp, "sender_public_key": nilOrString(t.SenderPublicKey),
@@ -27,6 +41,9 @@ func TransactionBytes(t transaction.Transaction) ([]byte, error) {
 
 func DecodeTransaction(data []byte) (transaction.Transaction, error) {
 	var raw struct {
+		Version         *uint8  `json:"version"`
+		NetworkID       string  `json:"network_id"`
+		Nonce           uint64  `json:"nonce"`
 		Sender          string  `json:"sender"`
 		Receiver        string  `json:"receiver"`
 		AmountBaseUnits uint64  `json:"amount_base_units"`
@@ -34,14 +51,31 @@ func DecodeTransaction(data []byte) (transaction.Transaction, error) {
 		SenderPublicKey *string `json:"sender_public_key"`
 		Signature       *string `json:"signature"`
 		TxHash          string  `json:"tx_hash"`
+		TxID            string  `json:"tx_id"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return transaction.Transaction{}, fmt.Errorf("decode transaction: %w", err)
 	}
-	if raw.Sender == "" || raw.Receiver == "" || raw.TxHash == "" {
+	version := uint8(0)
+	if raw.Version != nil {
+		version = *raw.Version
+	}
+	if raw.Sender == "" || raw.Receiver == "" {
 		return transaction.Transaction{}, errors.New("transaction missing required field")
 	}
-	return transaction.Transaction{Sender: raw.Sender, Receiver: raw.Receiver, AmountBaseUnits: raw.AmountBaseUnits, Timestamp: raw.Timestamp, SenderPublicKey: deref(raw.SenderPublicKey), Signature: deref(raw.Signature), TxHash: raw.TxHash}, nil
+	if version == transaction.V2Version {
+		if raw.NetworkID == "" || raw.TxID == "" {
+			return transaction.Transaction{}, errors.New("V2 transaction missing required field")
+		}
+		return transaction.Transaction{Version: version, NetworkID: raw.NetworkID, Nonce: raw.Nonce, Sender: raw.Sender, Receiver: raw.Receiver, AmountBaseUnits: raw.AmountBaseUnits, Timestamp: raw.Timestamp, SenderPublicKey: deref(raw.SenderPublicKey), Signature: deref(raw.Signature), TxID: raw.TxID}, nil
+	}
+	if raw.TxHash == "" {
+		return transaction.Transaction{}, errors.New("transaction missing required field")
+	}
+	if version != 0 {
+		return transaction.Transaction{}, errors.New("unsupported transaction version")
+	}
+	return transaction.Transaction{Version: version, Sender: raw.Sender, Receiver: raw.Receiver, AmountBaseUnits: raw.AmountBaseUnits, Timestamp: raw.Timestamp, SenderPublicKey: deref(raw.SenderPublicKey), Signature: deref(raw.Signature), TxHash: raw.TxHash}, nil
 }
 
 func BlockBytes(b *block.Block) ([]byte, error) {

@@ -1,0 +1,16 @@
+{
+  "data_dir": "./data/v2",
+  "protocol_version": 2,
+  "network_name": "syjnet-v2-237a1934769295c63fe47771a4996b17c3899e52f6bacf79ed7edefec90eaaf3",
+  "network_id": "237a1934769295c63fe47771a4996b17c3899e52f6bacf79ed7edefec90eaaf3",
+  "genesis_network_name": "sayanjali-syj-phase7-v1",
+  "phase7_genesis_state_path": "./configs/genesis/phase7-private-testnet.state.json",
+  "phase7_genesis_commitment": "36351980711cd88fe6ff134f0e4e858ee1a4572a9f44b7bde9f57213e7f1eb82",
+  "listen_address": "127.0.0.1:31303",
+  "advertised_address": "127.0.0.1:31303",
+  "seeds": [],
+  "max_peers": 32,
+  "api_listen_address": "127.0.0.1:8180",
+  "mempool_max": 1000,
+  "log_level": "INFO"
+}

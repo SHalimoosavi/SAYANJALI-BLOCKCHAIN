@@ -9,6 +9,8 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -18,6 +20,7 @@ import (
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/genesis"
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/identity"
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/mempool"
+	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/networkid"
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/p2pnode"
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/storage"
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/tokenomics"
@@ -37,6 +40,9 @@ type Config struct {
 	LogLevel                string   `json:"log_level"`
 	Phase7GenesisStatePath  string   `json:"phase7_genesis_state_path,omitempty"`
 	Phase7GenesisCommitment string   `json:"phase7_genesis_commitment,omitempty"`
+	ProtocolVersion         uint8    `json:"protocol_version,omitempty"`
+	NetworkID               string   `json:"network_id,omitempty"`
+	GenesisNetworkName      string   `json:"genesis_network_name,omitempty"`
 	APIAuthToken            string   `json:"api_auth_token,omitempty"`
 	APIUseTLS               bool     `json:"api_use_tls,omitempty"`
 	APIRequireTLS           bool     `json:"api_require_tls,omitempty"`
@@ -115,6 +121,7 @@ type Node struct {
 	store    *storage.Store
 	chain    *chain.Chain
 	pool     *mempool.Pool
+	v2pool   *mempool.V2Pool
 	net      *p2pnode.Network
 	ctx      context.Context
 	cancel   context.CancelFunc
@@ -158,6 +165,12 @@ func New(cfg Config) *Node {
 	return &Node{cfg: cfg, log: slog.New(h), done: make(chan struct{})}
 }
 func (n *Node) Start(ctx context.Context) error {
+	if n.cfg.ProtocolVersion != 0 && n.cfg.ProtocolVersion != 1 && n.cfg.ProtocolVersion != 2 {
+		return errors.New("unsupported consensus protocol version")
+	}
+	if n.cfg.ProtocolVersion != 2 && strings.HasPrefix(n.cfg.NetworkName, networkid.V2WirePrefix) {
+		return errors.New("V2 network identity requires consensus protocol version 2")
+	}
 	if err := os.MkdirAll(n.cfg.DataDir, 0700); err != nil {
 		return err
 	}
@@ -180,7 +193,61 @@ func (n *Node) Start(ctx context.Context) error {
 	}
 	n.store = st
 	var ch *chain.Chain
-	if n.cfg.NetworkName == tokenomics.Phase7NetworkName {
+	if n.cfg.ProtocolVersion == 2 {
+		if n.cfg.Phase7GenesisStatePath == "" || n.cfg.Phase7GenesisCommitment == "" {
+			st.Close()
+			return errors.New("V2 network requires GenesisState path and commitment")
+		}
+		if n.cfg.GenesisNetworkName == "" {
+			n.cfg.GenesisNetworkName = tokenomics.Phase7NetworkName
+		}
+		gs, err := tokenomics.Load(n.cfg.Phase7GenesisStatePath)
+		if err != nil {
+			st.Close()
+			return err
+		}
+		commitment, err := gs.Commitment()
+		if err != nil {
+			st.Close()
+			return err
+		}
+		if commitment != n.cfg.Phase7GenesisCommitment {
+			st.Close()
+			return errors.New("V2 GenesisState commitment mismatch")
+		}
+		if n.cfg.GenesisNetworkName == tokenomics.Phase7NetworkName && commitment != "36351980711cd88fe6ff134f0e4e858ee1a4572a9f44b7bde9f57213e7f1eb82" {
+			st.Close()
+			return errors.New("audited Phase 7 private-testnet GenesisState commitment mismatch")
+		}
+		g, err := genesis.Build()
+		if err != nil {
+			st.Close()
+			return err
+		}
+		effectiveID, _, err := networkid.EffectiveNetworkID(networkid.Inputs{ConsensusProtocolVersion: 2, GenesisStateCommitment: commitment, HistoricalGenesisHash: g.Hash, NetworkName: n.cfg.GenesisNetworkName})
+		if err != nil {
+			st.Close()
+			return err
+		}
+		if n.cfg.NetworkID != effectiveID {
+			st.Close()
+			return errors.New("V2 EffectiveNetworkID mismatch")
+		}
+		if n.cfg.GenesisNetworkName == tokenomics.Phase7NetworkName && effectiveID != "237a1934769295c63fe47771a4996b17c3899e52f6bacf79ed7edefec90eaaf3" {
+			st.Close()
+			return errors.New("audited Phase 7 private-testnet EffectiveNetworkID mismatch")
+		}
+		wire, err := networkid.WireNetworkName(effectiveID)
+		if err != nil {
+			st.Close()
+			return err
+		}
+		if n.cfg.NetworkName != wire {
+			st.Close()
+			return errors.New("V2 network name mismatch")
+		}
+		ch, err = chain.OpenV2WithGenesisState(st, gs, effectiveID, wire)
+	} else if n.cfg.NetworkName == tokenomics.Phase7NetworkName {
 		if n.cfg.Phase7GenesisStatePath == "" {
 			st.Close()
 			return errors.New("Phase 7 network requires a genesis state path")
@@ -218,8 +285,11 @@ func (n *Node) Start(ctx context.Context) error {
 	}
 	n.chain = ch
 	n.pool = mempool.New(n.cfg.MempoolMax)
+	if n.cfg.ProtocolVersion == 2 {
+		n.v2pool = mempool.NewV2(n.cfg.MempoolMax)
+	}
 	gHash := g.Hash
-	n.net = p2pnode.New(p2pnode.Config{NetworkName: n.cfg.NetworkName, GenesisHash: gHash, NodeID: id.NodeID, PublicKeyHex: id.PublicKeyHex, AdvertisedAddress: n.cfg.AdvertisedAddress, ListenAddress: n.cfg.ListenAddress, Seeds: n.cfg.Seeds, MaxPeers: n.cfg.MaxPeers, Logger: n.log, Identity: *id}, ch, n.pool)
+	n.net = p2pnode.New(p2pnode.Config{ProtocolVersion: n.cfg.ProtocolVersion, NetworkName: n.cfg.NetworkName, GenesisHash: gHash, NodeID: id.NodeID, PublicKeyHex: id.PublicKeyHex, V2Pool: n.v2pool, AdvertisedAddress: n.cfg.AdvertisedAddress, ListenAddress: n.cfg.ListenAddress, Seeds: n.cfg.Seeds, MaxPeers: n.cfg.MaxPeers, Logger: n.log, Identity: *id}, ch, n.pool)
 	n.ctx, n.cancel = context.WithCancel(ctx)
 	if err := n.net.Start(n.ctx); err != nil {
 		st.Close()
@@ -255,29 +325,38 @@ func (n *Node) Identity() identity.Identity {
 	}
 	return *n.id
 }
-func (n *Node) Chain() *chain.Chain       { return n.chain }
-func (n *Node) Mempool() *mempool.Pool    { return n.pool }
-func (n *Node) Network() *p2pnode.Network { return n.net }
+func (n *Node) Chain() *chain.Chain        { return n.chain }
+func (n *Node) Mempool() *mempool.Pool     { return n.pool }
+func (n *Node) V2Mempool() *mempool.V2Pool { return n.v2pool }
+func (n *Node) Network() *p2pnode.Network  { return n.net }
 func (n *Node) SubmitTransaction(tx transaction.Transaction) error {
 	if n.chain == nil || n.pool == nil {
 		return errors.New("node not started")
 	}
 
+	if n.chain.IsV2() {
+		if n.v2pool == nil {
+			return errors.New("V2 mempool unavailable")
+		}
+		if err := tx.ValidateV2(n.chain.NetworkID()); err != nil {
+			return err
+		}
+		if n.chain.HasConfirmedTransaction(tx.TxID) {
+			return errors.New("transaction already confirmed")
+		}
+		next, err := n.v2pool.ExpectedNonce(tx.Sender, n.chain.NextNonce(tx.Sender))
+		if err != nil {
+			return err
+		}
+		return n.v2pool.Add(tx, next, n.chain.Balance(tx.Sender), n.chain.NetworkID())
+	}
 	if err := tx.Validate(); err != nil {
 		return err
 	}
-
-	// Reject transactions already confirmed on the active chain.
-	// The index is rebuilt during startup and active-chain reorgs.
 	if n.chain.HasConfirmedTransaction(tx.TxHash) {
 		return errors.New("transaction already confirmed")
 	}
-
-	if err := n.pool.Add(tx, n.chain.Balance); err != nil {
-		return err
-	}
-
-	return nil
+	return n.pool.Add(tx, n.chain.Balance)
 }
 func (n *Node) Status() map[string]any {
 	m := map[string]any{"running": n.running.Load(), "network": n.cfg.NetworkName}
@@ -289,6 +368,10 @@ func (n *Node) Status() map[string]any {
 		m["genesis_supply_base_units"] = n.chain.GenesisSupply()
 		m["mining_issued_base_units"] = n.chain.MiningIssued()
 		m["phase7"] = n.chain.IsPhase7()
+		m["protocol_version"] = n.chain.ProtocolVersion()
+		if n.chain.IsV2() {
+			m["network_id"] = n.chain.NetworkID()
+		}
 	}
 	if n.id != nil {
 		m["node_id"] = n.id.NodeID
@@ -315,7 +398,17 @@ func MineNext(ch *chain.Chain, receiver string, txs []transaction.Transaction) (
 	// The local wall clock is not allowed to manufacture a timestamp that peers
 	// would reject under the chain-history future-time bound.
 	timestamp := tip.Timestamp + float64(protocol.TargetBlockTimeSeconds)
-	coin := transaction.Transaction{Sender: protocol.CoinbaseSender, Receiver: receiver, AmountBaseUnits: reward, Timestamp: timestamp}
+	var coin transaction.Transaction
+	var err error
+	if ch.IsV2() {
+		coin, err = transaction.NewV2Coinbase(receiver, ch.NetworkID(), reward, timestamp)
+		if err != nil {
+			return nil, err
+		}
+		txs = selectV2Transactions(ch, txs)
+	} else {
+		coin = transaction.Transaction{Sender: protocol.CoinbaseSender, Receiver: receiver, AmountBaseUnits: reward, Timestamp: timestamp}
+	}
 	all := append([]transaction.Transaction{coin}, txs...)
 	d, err := nextDifficulty(ch)
 	if err != nil {
@@ -336,6 +429,39 @@ func MineNext(ch *chain.Chain, receiver string, txs []transaction.Transaction) (
 	}
 	return nil, errors.New("nonce exhausted")
 }
+
+func selectV2Transactions(ch *chain.Chain, txs []transaction.Transaction) []transaction.Transaction {
+	groups := make(map[string][]transaction.Transaction)
+	for _, tx := range txs {
+		if !tx.IsV2() || tx.Sender == protocol.CoinbaseSender {
+			continue
+		}
+		groups[tx.Sender] = append(groups[tx.Sender], tx)
+	}
+	senders := make([]string, 0, len(groups))
+	for sender := range groups {
+		senders = append(senders, sender)
+	}
+	sort.Strings(senders)
+	out := make([]transaction.Transaction, 0, len(txs))
+	for _, sender := range senders {
+		arr := groups[sender]
+		sort.Slice(arr, func(i, j int) bool { return arr[i].Nonce < arr[j].Nonce })
+		expected := ch.NextNonce(sender)
+		for _, tx := range arr {
+			if tx.Nonce != expected {
+				break
+			}
+			out = append(out, tx)
+			if expected == ^uint64(0) {
+				break
+			}
+			expected++
+		}
+	}
+	return out
+}
+
 func nextDifficulty(ch *chain.Chain) (int, error) {
 	prefix := ch.ChainCopy()
 	cfg := protocol.DefaultDifficultyConfig()

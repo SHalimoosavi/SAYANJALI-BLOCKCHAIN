@@ -13,6 +13,9 @@ import (
 )
 
 type Transaction struct {
+	Version         uint8   `json:"version,omitempty"`
+	NetworkID       string  `json:"network_id,omitempty"`
+	Nonce           uint64  `json:"nonce,omitempty"`
 	Sender          string  `json:"sender"`
 	Receiver        string  `json:"receiver"`
 	AmountBaseUnits uint64  `json:"amount_base_units"`
@@ -20,6 +23,7 @@ type Transaction struct {
 	SenderPublicKey string  `json:"sender_public_key,omitempty"`
 	Signature       string  `json:"signature,omitempty"`
 	TxHash          string  `json:"tx_hash,omitempty"`
+	TxID            string  `json:"tx_id,omitempty"`
 }
 
 func (t Transaction) SigningPayload() map[string]any {
@@ -45,6 +49,9 @@ func (t Transaction) ComputeHash() (string, error) {
 	return corecrypto.SHA256String(s), nil
 }
 func (t *Transaction) Sign(k *wallet.KeyPair) error {
+	if t.Version != 0 {
+		return errors.New("V2 transactions must use SignV2")
+	}
 	if t.Sender == protocol.CoinbaseSender {
 		return errors.New("coinbase transactions cannot be signed")
 	}
@@ -64,6 +71,9 @@ func (t *Transaction) Sign(k *wallet.KeyPair) error {
 	return err
 }
 func (t Transaction) Verify() bool {
+	if t.Version != 0 {
+		return false
+	}
 	if t.AmountBaseUnits == 0 || t.AmountBaseUnits > protocol.MaxSupplyBaseUnits || !wallet.ValidAddress(t.Receiver) {
 		return false
 	}
@@ -112,6 +122,16 @@ func (t Transaction) Validate() error {
 	}
 	return nil
 }
+
+// IdentityHash returns the consensus transaction identity used by Merkle trees.
+// V1 retains the frozen tx_hash; V2 uses the signature-independent tx_id.
+func (t Transaction) IdentityHash() string {
+	if t.Version == V2Version {
+		return t.TxID
+	}
+	return t.TxHash
+}
+
 func (t Transaction) String() string {
 	return fmt.Sprintf("%s:%s:%d", t.Sender, t.Receiver, t.AmountBaseUnits)
 }

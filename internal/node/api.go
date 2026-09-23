@@ -105,7 +105,7 @@ func (a *API) health(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(405)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "protocol_version": a.n.chain.ProtocolVersion()})
 }
 func (a *API) status(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -170,11 +170,19 @@ func (a *API) transactions(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		a.n.net.BroadcastTransaction(tx)
-		writeJSON(w, 202, map[string]any{"accepted": true, "tx_hash": tx.TxHash})
+		if a.n.chain.IsV2() {
+			writeJSON(w, 202, map[string]any{"accepted": true, "version": 2, "tx_id": tx.TxID})
+		} else {
+			writeJSON(w, 202, map[string]any{"accepted": true, "version": 1, "tx_hash": tx.TxHash})
+		}
 		return
 	}
 	if r.Method == http.MethodGet {
-		writeJSON(w, 200, map[string]any{"count": a.n.pool.Len()})
+		if a.n.chain.IsV2() {
+			writeJSON(w, 200, map[string]any{"count": a.n.v2pool.Len(), "version": 2})
+		} else {
+			writeJSON(w, 200, map[string]any{"count": a.n.pool.Len(), "version": 1})
+		}
 		return
 	}
 	w.WriteHeader(405)
@@ -191,7 +199,16 @@ func (a *API) mine(w http.ResponseWriter, r *http.Request) {
 	// smaller surface (no redirection at all) is safer than authenticating
 	// a redirection feature nobody asked for.
 	receiver := a.n.id.Address
-	txs := a.n.pool.List(500)
+	var txs []transaction.Transaction
+	if a.n.chain.IsV2() {
+		if a.n.v2pool == nil {
+			writeJSON(w, 500, map[string]string{"error": "V2 mempool unavailable"})
+			return
+		}
+		txs = a.n.v2pool.List(500)
+	} else {
+		txs = a.n.pool.List(500)
+	}
 	b, e := MineNext(a.n.chain, receiver, txs)
 	if e != nil {
 		writeJSON(w, 400, map[string]string{"error": e.Error()})
@@ -202,13 +219,17 @@ func (a *API) mine(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]string{"error": errText(reason, e)})
 		return
 	}
-	hashes := make([]string, 0)
+	ids := make([]string, 0)
 	for _, active := range a.n.chain.ChainCopy() {
 		for _, tx := range active.Transactions {
-			hashes = append(hashes, tx.TxHash)
+			ids = append(ids, tx.IdentityHash())
 		}
 	}
-	a.n.pool.RemoveHashes(hashes)
+	if a.n.chain.IsV2() {
+		a.n.v2pool.RemoveIDs(ids)
+	} else {
+		a.n.pool.RemoveHashes(ids)
+	}
 	a.n.net.BroadcastBlock(b)
 	writeJSON(w, 201, map[string]any{"accepted": true, "hash": b.Hash, "height": b.Index, "nonce": b.Nonce, "difficulty": b.Difficulty})
 }

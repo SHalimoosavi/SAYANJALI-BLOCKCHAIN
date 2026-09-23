@@ -784,3 +784,17 @@ The maintenance loop is deliberately bounded and deterministic: it only contacts
 The repository now contains the first production-oriented Go node layer under `internal/node`, `internal/chain`, `internal/storage`, `internal/identity`, `internal/mempool`, and `internal/p2pnode`, with executable entrypoint `cmd/syjd`. The Phase 5.2 binary P2P codec remains frozen and is consumed rather than redesigned.
 
 See `docs/phase6/STATUS.md` and `docs/phase6/TESTNET.md` for implementation boundaries and local testnet operation.
+
+## Phase 8.1 — V2 Consensus Foundation
+
+Phase 8.1 adds a separate V2 consensus track without modifying the frozen V1 protocol vectors or P2P wire framing. V2 binds transaction version, network identity, and sender nonce into the signed payload; uses a signature-independent `tx_id`; enforces consensus-level duplicate-ID rejection; reconstructs nonce/confirmed-ID state during replay; and uses nonce-aware mempool/mining selection.
+
+The audited private-testnet EffectiveNetworkID is:
+
+`237a1934769295c63fe47771a4996b17c3899e52f6bacf79ed7edefec90eaaf3`
+
+The V2 P2P HELLO network representation is:
+
+`syjnet-v2-237a1934769295c63fe47771a4996b17c3899e52f6bacf79ed7edefec90eaaf3`
+
+See `docs/phase8/` for the transaction specification, network identity derivation, replay/reorg rules, testing procedure, and ADR-008. V2 is not a mainnet readiness claim; a future public network requires a separately approved GenesisState and network identity.
