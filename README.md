@@ -1,35 +1,35 @@
-# Current Production-Track Status (Phase 7)
-
-The **Go node (`cmd/syjd`) is the production-track implementation**. The Python implementation under `blockchain/` and `api/` is retained as the **reference/oracle implementation** for protocol compatibility, vectors, research, and regression testing; it is not the production network API. Do not expose the Python API as a production node.
-
-Phase 7 economic state is separate from the frozen historical block-0 identity:
-
-- Maximum supply: **720,000,000 SYJ** = `72,000,000,000,000,000` base units
-- Genesis economic allocation: **288,000,000 SYJ** = `28,800,000,000,000,000` base units
-- Mining allocation: **432,000,000 SYJ** = `43,200,000,000,000,000` base units
-- Network identity: `sayanjali-syj-phase7-v1`
-
-Mutating Go API endpoints require a bearer token. For any non-loopback API deployment, TLS is mandatory. Production P2P deployments should enable the TLS transport wrapper; the frozen Phase 5.2 application-level P2P wire format remains unchanged.
-
-Node identity private keys are encrypted at rest using AES-256-GCM with the externally supplied `SYJ_IDENTITY_ENCRYPTION_KEY` (32 random bytes encoded as 64 hex characters). The key must not be committed or placed in repository configuration.
-
-The isolated Phase 7 private-testnet fixture is `configs/genesis/phase7-private-testnet.state.json`, and the three-node harness is `scripts/testnet/run-3-node.sh`. The fixture contains deterministic test addresses only and is not a production custody configuration.
-
-**This repository is not a claim of mainnet readiness.** Public/mainnet deployment still requires operational TLS/certificate management, external secret management, production genesis/custody approval, infrastructure/CI controls, observability, and independent security review.
-
----
-
-![Python](https://img.shields.io/badge/python-3.13%2B-blue)
-![FastAPI](https://img.shields.io/badge/framework-FastAPI-009688)
-![License](https://img.shields.io/badge/license-MIT-green)
-![Tests](https://img.shields.io/badge/tests-195%20passing-brightgreen)
-![Version](https://img.shields.io/badge/version-v0.3.1--mvp-orange)
-![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS%20%7C%20Android-lightgrey)
-![GitHub Stars](https://img.shields.io/github/stars/sayanjali-nexus/sayanjali-blockchain?style=social)
-![GitHub Issues](https://img.shields.io/github/issues/sayanjali-nexus/sayanjali-blockchain)
-![GitHub Forks](https://img.shields.io/github/forks/sayanjali-nexus/sayanjali-blockchain?style=social)
-
 # SAYANJALI BLOCKCHAIN
+
+> **Current documentation phase:** Phase 9 — Protocol Formalization
+>
+> **Current status:** NOT PRODUCTION-READY • NOT MAINNET-READY
+>
+> Phase 9 defines the protocol specification, invariants, schemas, threat
+> model, governance/economic review boundaries, and launch gates required
+> before a production-consensus implementation. It does **not** represent
+> the proposed PoS/BFT architecture as shipped or implemented.
+
+## Current Phase 9 maturity
+
+SAYANJALI BLOCKCHAIN is an independent Layer-1 protocol research and
+engineering project by SAYANJALI NEXUS PRIVATE LIMITED.
+
+The repository contains multiple historical and implementation tracks:
+
+| Track | Status |
+|---|---|
+| V1 | Historical / frozen compatibility / reference |
+| V2 | Implemented Go protocol foundation / migration-research track |
+| Phase 9 | Formal protocol specification and review contract |
+| Cosmos SDK + CometBFT | Proposed / not shipped |
+| Production network | **NOT PRODUCTION-READY** |
+| Mainnet | **NOT READY** |
+
+The current PoW implementation remains the **legacy/transitional/
+protocol-research track** and is not the production consensus target.
+
+The proposed Cosmos SDK + CometBFT architecture is a future target only.
+It is not integrated, shipped, or implemented by Phase 9.
 
 **SAYANJALI BLOCKCHAIN** is an independent Layer-1 blockchain implementation
 and the native settlement layer for the **SYJ Token**. It is developed and
@@ -71,6 +71,39 @@ continue to be added as independent modules in subsequent phases.
 - [Project Vision & Architecture](#project-vision--architecture)
 
 ---
+
+## Historical Phase 7 implementation reference
+
+The **Go node (`cmd/syjd`) is the production-track implementation**. The Python implementation under `blockchain/` and `api/` is retained as the **reference/oracle implementation** for protocol compatibility, vectors, research, and regression testing; it is not the production network API. Do not expose the Python API as a production node.
+
+The following Phase 7 economic values and network identity are historical/reference information only; they are not finalized Phase 9 production monetary policy:
+
+Phase 7 economic state is separate from the frozen historical block-0 identity:
+
+- Maximum supply: **720,000,000 SYJ** = `72,000,000,000,000,000` base units
+- Genesis economic allocation: **288,000,000 SYJ** = `28,800,000,000,000,000` base units
+- Mining allocation: **432,000,000 SYJ** = `43,200,000,000,000,000` base units
+- Network identity: `sayanjali-syj-phase7-v1`
+
+Mutating Go API endpoints require a bearer token. For any non-loopback API deployment, TLS is mandatory. Production P2P deployments should enable the TLS transport wrapper; the frozen Phase 5.2 application-level P2P wire format remains unchanged.
+
+Node identity private keys are encrypted at rest using AES-256-GCM with the externally supplied `SYJ_IDENTITY_ENCRYPTION_KEY` (32 random bytes encoded as 64 hex characters). The key must not be committed or placed in repository configuration.
+
+The isolated Phase 7 private-testnet fixture is `configs/genesis/phase7-private-testnet.state.json`, and the three-node harness is `scripts/testnet/run-3-node.sh`. The fixture contains deterministic test addresses only and is not a production custody configuration.
+
+**This repository is not a claim of mainnet readiness.** Public/mainnet deployment still requires operational TLS/certificate management, external secret management, production genesis/custody approval, infrastructure/CI controls, observability, and independent security review.
+
+---
+
+![Python](https://img.shields.io/badge/python-3.13%2B-blue)
+![FastAPI](https://img.shields.io/badge/framework-FastAPI-009688)
+![License](https://img.shields.io/badge/license-MIT-green)
+![Tests](https://img.shields.io/badge/tests-195%20passing-brightgreen)
+![Version](https://img.shields.io/badge/version-v0.3.1--mvp-orange)
+![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS%20%7C%20Android-lightgrey)
+![GitHub Stars](https://img.shields.io/github/stars/sayanjali-nexus/sayanjali-blockchain?style=social)
+![GitHub Issues](https://img.shields.io/github/issues/sayanjali-nexus/sayanjali-blockchain)
+![GitHub Forks](https://img.shields.io/github/forks/sayanjali-nexus/sayanjali-blockchain?style=social)
 
 ## Project Overview
 
@@ -798,3 +831,67 @@ The V2 P2P HELLO network representation is:
 `syjnet-v2-237a1934769295c63fe47771a4996b17c3899e52f6bacf79ed7edefec90eaaf3`
 
 See `docs/phase8/` for the transaction specification, network identity derivation, replay/reorg rules, testing procedure, and ADR-008. V2 is not a mainnet readiness claim; a future public network requires a separately approved GenesisState and network identity.
+
+
+---
+
+# Phase 9 — Protocol Formalization
+
+## Phase 9 architecture direction
+
+```text
+Clients
+   |
+ RPC / API
+   |
++--v----------------------+
+| Cosmos SDK application  |  PROPOSED
+| deterministic state     |
++-----------+-------------+
+            | ABCI
++-----------v-------------+
+| CometBFT consensus      |  PROPOSED
+| proposal/vote/commit    |
++-----------+-------------+
+            |
+      Validator P2P
+```
+
+The current PoW implementation is **Legacy / transitional / protocol-research track — not the production consensus target.** The proposed Cosmos SDK + CometBFT architecture is not integrated and must not be represented as shipped.
+
+## Phase 9 documentation
+
+See:
+- `docs/spec/protocol-overview.md`
+- `docs/spec/transaction-spec.md`
+- `docs/spec/block-spec.md`
+- `docs/spec/state-transition-spec.md`
+- `docs/spec/consensus-spec.md`
+- `docs/spec/validator-spec.md`
+- `docs/spec/staking-spec.md`
+- `docs/spec/fee-spec.md`
+- `docs/spec/governance-spec.md`
+- `docs/adr/ADR-009-state-root.md`
+- `docs/adr/ADR-010-pos-bft.md`
+- `docs/adr/ADR-011-validator-lifecycle.md`
+- `docs/adr/ADR-012-consensus-runtime.md`
+- `docs/threat-model/phase9-threat-model.md`
+- `docs/operations/phase9-launch-gates.md`
+
+## Current limitations
+
+The production state tree, PoS/BFT runtime, staking, slashing, validator lifecycle execution, governance execution, production monetary policy, production genesis, and production deployment controls are not implemented. Independent audits, external validators, governance rehearsal, monitoring, incident response, and legal review are still required by the launch gates.
+
+SYJ is not a production-ready blockchain, not a mainnet-ready network, and not a demonstrated decentralized validator network. Phase 9 defines future requirements; it does not establish that those requirements have been met.
+
+## Phase 9 development guidance
+
+Use the existing repository implementation and Phase 9 specifications as separate references. Do not implement production consensus before the specification freeze and invariant-to-test mapping are approved.
+
+Changes to consensus-critical behavior should reference the applicable specification and invariant IDs. Do not silently change V2 compatibility semantics.
+
+Validator operation is a future production concern. No production validator program is established by Phase 9.
+
+Security findings should be handled through the repository's security process. Phase 9 is not an audit and does not certify the implementation.
+
+Governance is specified but not implemented. All economic and governance thresholds remain subject to explicit review.

@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sayanjali.example/protocol/schemas/block-v2.json",
+  "title": "SYJ Production Block V2 Target Schema",
+  "description": "Phase 9 target block contract. It is a specification artifact and is NOT implemented by the current PoW repository.",
+  "type": "object",
+  "required": [
+    "version",
+    "height",
+    "network_id",
+    "parent_hash",
+    "timestamp",
+    "proposer_validator_id",
+    "transaction_root",
+    "state_root",
+    "receipt_event_root",
+    "consensus_evidence",
+    "commit_certificate"
+  ],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "height": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "network_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "parent_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "timestamp": {
+      "type": "number",
+      "minimum": 0
+    },
+    "proposer_validator_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "transaction_root": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "state_root": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "receipt_event_root": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "consensus_evidence": {
+      "type": "object",
+      "description": "Runtime-defined authenticated evidence; exact schema TBD \u2014 requires CometBFT integration review.",
+      "additionalProperties": true
+    },
+    "commit_certificate": {
+      "type": "object",
+      "description": "Runtime-defined commit certificate; exact schema TBD \u2014 requires CometBFT integration review.",
+      "additionalProperties": true
+    },
+    "application_metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false,
+  "$comment": "Maximum block size, exact root algorithms, evidence encoding, and production hash construction are TBD \u2014 requires protocol, security, and runtime review."
+}

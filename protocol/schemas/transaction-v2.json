@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sayanjali.example/protocol/schemas/transaction-v2.json",
+  "title": "SYJ V2 Transaction Compatibility Schema",
+  "description": "Compatibility schema for the implemented Phase 8.1 V2 normal transaction envelope. Production fee/expiry extensions require a separately versioned protocol decision.",
+  "type": "object",
+  "required": [
+    "version",
+    "network_id",
+    "sender",
+    "receiver",
+    "amount_base_units",
+    "nonce",
+    "timestamp",
+    "sender_public_key",
+    "signature",
+    "tx_id"
+  ],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 2,
+      "description": "Implemented V2 transaction version."
+    },
+    "network_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Exact lowercase hexadecimal network identity."
+    },
+    "sender": {
+      "type": "string",
+      "minLength": 1,
+      "description": "SYJ sender address; cryptographic address validation is performed by protocol code."
+    },
+    "receiver": {
+      "type": "string",
+      "minLength": 1,
+      "description": "SYJ receiver address; cryptographic address validation is performed by protocol code."
+    },
+    "amount_base_units": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Positive unsigned base-unit amount; the current implementation bounds it by the protocol maximum-supply constant."
+    },
+    "nonce": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Unsigned account nonce."
+    },
+    "timestamp": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Finite non-negative timestamp under current implementation rules."
+    },
+    "sender_public_key": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{128}$",
+      "description": "Raw 64-byte secp256k1 public key encoded as lowercase hexadecimal."
+    },
+    "signature": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{128}$",
+      "description": "Raw R||S signature encoded as lowercase hexadecimal."
+    },
+    "tx_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Signature-independent V2 transaction identity."
+    }
+  },
+  "additionalProperties": false,
+  "$comment": "Production fee and expiry fields are not part of the frozen current V2 object. Their final representation is TBD \u2014 requires governance, economic, and security review."
+}
