@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sayanjali.example/protocol/schemas/genesis-v2.json",
+  "title": "SYJ Production Genesis V2 Target Schema",
+  "description": "Phase 9 target genesis contract. This is a schema only; no mainnet genesis is created or approved.",
+  "type": "object",
+  "required": [
+    "protocol_version",
+    "network_name",
+    "network_id",
+    "historical_genesis_hash",
+    "genesis_state_commitment",
+    "accounts",
+    "validators",
+    "staking",
+    "governance",
+    "monetary_policy"
+  ],
+  "properties": {
+    "protocol_version": {
+      "type": "integer",
+      "minimum": 2
+    },
+    "network_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "network_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "historical_genesis_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "genesis_state_commitment": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "accounts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "address",
+          "balance_base_units",
+          "nonce"
+        ],
+        "properties": {
+          "address": {
+            "type": "string",
+            "minLength": 1
+          },
+          "balance_base_units": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "nonce": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "validators": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "validator_id",
+          "consensus_key",
+          "stake_base_units"
+        ],
+        "properties": {
+          "validator_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "consensus_key": {
+            "type": "string",
+            "minLength": 1
+          },
+          "stake_base_units": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "staking": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "governance": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "monetary_policy": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false,
+  "$comment": "Production allocations, validator minimum stake, validator count, unbonding, rewards, inflation, fees, governance thresholds, and emergency parameters are TBD \u2014 requires governance and economic review. This schema does not constitute a mainnet genesis."
+}

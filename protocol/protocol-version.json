@@ -1,0 +1,19 @@
+{
+  "protocol_name": "SAYANJALI BLOCKCHAIN",
+  "phase": "Phase 9 \u2014 Protocol Formalization",
+  "specification_status": "Draft",
+  "authoritative_baseline": "5e02557363be6319cca06cd7e20a8be906265060",
+  "historical_reference_track": "V1 \u2014 frozen compatibility/reference",
+  "current_reference_protocol": "V2 Go protocol foundation",
+  "supported_transaction_version": 2,
+  "network_id_rules": "V2 network identity is 64 lowercase hexadecimal characters and must equal the chain's independently derived identity.",
+  "schema_version": "phase9-draft-1",
+  "compatibility_status": "Current V2 semantics remain a reference boundary; production extensions require explicit versioning.",
+  "current_consensus": "Proof-of-Work legacy/transitional/protocol-research track",
+  "target_consensus": "PoS/BFT compatible with CometBFT \u2014 PROPOSED / NOT SHIPPED",
+  "target_runtime": "Cosmos SDK + CometBFT \u2014 PROPOSED / NOT SHIPPED",
+  "production_readiness": "NOT PRODUCTION-READY",
+  "mainnet_readiness": "NOT READY",
+  "decentralization_status": "NOT YET DEMONSTRATED",
+  "implementation_status": "Phase 9 contains specifications and schemas only; no production PoS/staking/validator/governance implementation is included."
+}
