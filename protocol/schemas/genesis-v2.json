@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://sayanjali.example/protocol/schemas/genesis-v2.json",
   "title": "SYJ Production Genesis V2 Target Schema",
-  "description": "Phase 9 target genesis contract. This is a schema only; no mainnet genesis is created or approved.",
+  "description": "Phase 9.2 target genesis contract. This is a schema only; no mainnet genesis is created or approved. network_id is the canonical SYJ identity.",
   "type": "object",
   "required": [
     "protocol_version",
@@ -19,26 +19,32 @@
   "properties": {
     "protocol_version": {
       "type": "integer",
-      "minimum": 2
+      "const": 2,
+      "description": "Genesis schema/protocol major version. A different version requires a new versioned genesis contract."
     },
     "network_name": {
       "type": "string",
-      "minLength": 1
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$",
+      "description": "Canonical human-readable network label. It participates in deterministic network_id derivation and is not itself the network identity."
     },
     "network_id": {
       "type": "string",
-      "pattern": "^[0-9a-f]{64}$"
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Canonical 32-byte SYJ network identity encoded as lowercase hexadecimal. It MUST equal the deterministic EffectiveNetworkID derived from the genesis identity inputs."
     },
     "historical_genesis_hash": {
       "type": "string",
-      "pattern": "^[0-9a-f]{64}$"
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Approved historical genesis lineage anchor. The production value is TBD — requires governance and security review."
     },
     "genesis_state_commitment": {
       "type": "string",
-      "pattern": "^[0-9a-f]{64}$"
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Domain-separated SHA-256 commitment over the canonical genesis state payload excluding this field. It is distinct from the later authenticated runtime state-root algorithm."
     },
     "accounts": {
       "type": "array",
+      "description": "Initial account state. Records MUST be unique by address and canonically sorted by address before commitment.",
       "items": {
         "type": "object",
         "required": [
@@ -49,22 +55,26 @@
         "properties": {
           "address": {
             "type": "string",
-            "minLength": 1
+            "pattern": "^SYJ[0-9a-f]{40}$",
+            "description": "Audited V2 SYJ address format."
           },
           "balance_base_units": {
             "type": "integer",
-            "minimum": 0
+            "minimum": 0,
+            "description": "Non-negative initial balance in base units."
           },
           "nonce": {
             "type": "integer",
-            "minimum": 0
+            "minimum": 0,
+            "description": "Non-negative initial normal-account nonce."
           }
         },
-        "additionalProperties": true
+        "additionalProperties": false
       }
     },
     "validators": {
       "type": "array",
+      "description": "Initial validator records. Records MUST be unique by validator_id and consensus_key and canonically sorted by validator_id.",
       "items": {
         "type": "object",
         "required": [
@@ -75,33 +85,39 @@
         "properties": {
           "validator_id": {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "description": "Stable validator identifier."
           },
           "consensus_key": {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "description": "Canonical validator consensus public-key encoding. Exact production encoding is TBD — requires runtime/security review."
           },
           "stake_base_units": {
             "type": "integer",
-            "minimum": 0
+            "minimum": 0,
+            "description": "Non-negative authenticated stake used to derive voting power; final minimum/maximum stake policy is TBD — requires governance and economic review."
           }
         },
-        "additionalProperties": true
+        "additionalProperties": false
       }
     },
     "staking": {
       "type": "object",
+      "description": "Initial staking module state/parameter container. Final staking economics remain TBD — requires governance and economic review.",
       "additionalProperties": true
     },
     "governance": {
       "type": "object",
+      "description": "Initial governance module state/parameter container. Final governance thresholds and emergency authority remain TBD — requires governance, security, and legal review.",
       "additionalProperties": true
     },
     "monetary_policy": {
       "type": "object",
+      "description": "Initial monetary-policy state/parameter container. Final supply, issuance, rewards, fees, burn, allocation, and vesting remain TBD — requires governance, economic, security, and legal review.",
       "additionalProperties": true
     }
   },
   "additionalProperties": false,
-  "$comment": "Production allocations, validator minimum stake, validator count, unbonding, rewards, inflation, fees, governance thresholds, and emergency parameters are TBD \u2014 requires governance and economic review. This schema does not constitute a mainnet genesis."
+  "$comment": "Top-level fields are frozen by the Phase 9.2 contract. Nested staking/governance/monetary-policy module fields remain semantically versioned and MUST be validated by the active module contract. No mainnet genesis or final token distribution is created by this schema."
 }

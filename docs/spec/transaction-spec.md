@@ -62,7 +62,7 @@ Maximum transaction size is **TBD — requires protocol/security review**. A nod
 
 A normal current V2 transaction MUST:
 1. have version exactly 2;
-2. carry the chain's exact 64-hex network identity;
+2. carry the protocol's exact 64-hex `network_id`;
 3. have a positive amount no greater than the repository's maximum-supply constant;
 4. have a finite non-negative timestamp within the current implementation's uint64-compatible numeric range;
 5. use valid, distinct sender and receiver addresses;
@@ -114,7 +114,7 @@ For a failed executable transaction, the protocol MUST specify which effects are
 
 ## 10. Security assumptions and failure modes
 
-Security depends on correct key custody, canonical serialization, domain separation, nonce state, chain identity, and deterministic validation. Key compromise, network-ID confusion, timestamp abuse, signature malleability, and oversized payloads are explicit threat surfaces.
+Security depends on correct key custody, canonical serialization, domain separation, nonce state, `network_id`, and deterministic validation. Key compromise, network-ID confusion, timestamp abuse, signature malleability, and oversized payloads are explicit threat surfaces.
 
 ## 11. Compatibility and migration
 

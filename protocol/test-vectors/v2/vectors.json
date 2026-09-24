@@ -181,7 +181,7 @@
     "same tx_id cannot be confirmed twice on active chain",
     "same tx_id cannot appear twice in one block",
     "nonce must equal sender next_nonce at consensus application",
-    "network_id is signed and must match chain identity",
+    "network_id is signed and must match the active network_id",
     "version is signed and must equal 2",
     "V1 and V2 transactions are never interchangeable"
   ],

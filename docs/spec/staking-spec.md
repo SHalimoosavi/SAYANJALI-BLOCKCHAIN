@@ -43,7 +43,7 @@ If enabled, redelegation MUST preserve deterministic accounting and prevent rapi
 
 ## 6. Slashing and evidence
 
-Evidence MUST identify the validator, chain/network, height/round/step, signed messages, and cryptographic proof of the violation. The state machine MUST verify evidence before applying a penalty. Slash percentages are **TBD — requires governance and economic review**.
+Evidence MUST identify the validator, `network_id`, height/round/step, signed messages, and cryptographic proof of the violation. The state machine MUST verify evidence before applying a penalty. Slash percentages are **TBD — requires governance and economic review**.
 
 ## 7. Rewards
 

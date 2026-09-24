@@ -20,7 +20,7 @@ The current PoW model is **Legacy / transitional / protocol-research track — n
 ```text
 version
 height
-chain_id / network_id
+network_id
 parent_hash
 timestamp
 proposer_validator_id
@@ -60,7 +60,7 @@ Consensus-critical serialization MUST be deterministic and versioned. The produc
 
 ## 9. Invalid block conditions
 
-Reject a block for unsupported version; wrong chain identity; incorrect height; incorrect parent; invalid timestamp rules; malformed proposer identity; invalid transaction root; invalid state root; invalid receipt/event root; invalid consensus evidence; insufficient commit voting power; invalid validator-set transition; oversized encoding; duplicate/conflicting transactions; invalid state transition; or hash mismatch.
+Reject a block for unsupported version; wrong `network_id`; incorrect height; incorrect parent; invalid timestamp rules; malformed proposer identity; invalid transaction root; invalid state root; invalid receipt/event root; invalid consensus evidence; insufficient commit voting power; invalid validator-set transition; oversized encoding; duplicate/conflicting transactions; invalid state transition; or hash mismatch.
 
 ## 10. State-transition pseudocode
 
@@ -92,7 +92,7 @@ A state-root mismatch, invalid commit certificate, parent mismatch, invalid prop
 
 ## 14. Compatibility and migration
 
-Current PoW blocks remain historical/reference data. Migration to a production block model requires a new versioned genesis or explicit migration boundary. No automatic reinterpretation of historical PoW headers as BFT commit certificates is permitted.
+Current PoW blocks remain historical/reference data. The production block model uses canonical `network_id`. Cosmos/CometBFT `chain-id` is derived externally from `network_id` under ADR-013 and is not an independent protocol identity. Migration to a production block model requires a new versioned genesis or explicit migration boundary. No automatic reinterpretation of historical PoW headers as BFT commit certificates is permitted.
 
 ## 15. Required vectors
 

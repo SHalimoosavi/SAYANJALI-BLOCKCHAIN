@@ -46,3 +46,10 @@
 Phase 9 establishes a draft protocol specification contract, schemas, ADRs, threat model, launch gates, and maturity documentation. It does not establish production consensus, staking, validators, governance execution, decentralization, or mainnet readiness.
 
 **Human protocol review and freeze are still required.**
+
+
+## Phase 9.2 remediation status
+
+Phase 9.2 is the contract-remediation package for the four Phase 9.1 conditions. It corrects invariant references, locks `network_id` as the canonical protocol identifier, adds the field-level genesis contract, and defines the Phase 10 local 4–7 validator prototype boundary. No runtime implementation is introduced. **Phase 10 has not begun.**
+
+The historical Phase 9 validation conclusions above remain the record of the Phase 9 package; Phase 9.2 validation is recorded separately in `PHASE9_2_VALIDATION_REPORT.md`.

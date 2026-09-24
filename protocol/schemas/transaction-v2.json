@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://sayanjali.example/protocol/schemas/transaction-v2.json",
   "title": "SYJ V2 Transaction Compatibility Schema",
-  "description": "Compatibility schema for the implemented Phase 8.1 V2 normal transaction envelope. Production fee/expiry extensions require a separately versioned protocol decision.",
+  "description": "Compatibility schema for the implemented Phase 8.1 V2 normal transaction envelope. The canonical protocol network identifier is network_id. Production fee/expiry extensions require a separately versioned protocol decision.",
   "type": "object",
   "required": [
     "version",
@@ -20,12 +20,12 @@
     "version": {
       "type": "integer",
       "const": 2,
-      "description": "Implemented V2 transaction version."
+      "description": "Implemented V2 transaction version. A different version requires a separately versioned contract."
     },
     "network_id": {
       "type": "string",
       "pattern": "^[0-9a-f]{64}$",
-      "description": "Exact lowercase hexadecimal network identity."
+      "description": "Canonical SYJ network identity: exactly 64 lowercase hexadecimal characters. It MUST equal the active network identity."
     },
     "sender": {
       "type": "string",
@@ -50,7 +50,7 @@
     "timestamp": {
       "type": "number",
       "minimum": 0,
-      "description": "Finite non-negative timestamp under current implementation rules."
+      "description": "Finite non-negative timestamp under current implementation rules; non-finite JSON numeric values are rejected by protocol validation."
     },
     "sender_public_key": {
       "type": "string",
@@ -69,5 +69,5 @@
     }
   },
   "additionalProperties": false,
-  "$comment": "Production fee and expiry fields are not part of the frozen current V2 object. Their final representation is TBD \u2014 requires governance, economic, and security review."
+  "$comment": "network_id is canonical. A Cosmos/CometBFT chain-id is an external compatibility representation only and is not a transaction field. Production fee/expiry fields remain TBD — requires governance, economic, and security review."
 }
