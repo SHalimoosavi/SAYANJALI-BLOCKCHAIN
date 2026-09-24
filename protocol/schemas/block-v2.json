@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://sayanjali.example/protocol/schemas/block-v2.json",
   "title": "SYJ Production Block V2 Target Schema",
-  "description": "Phase 9 target block contract. It is a specification artifact and is NOT implemented by the current PoW repository.",
+  "description": "Phase 9 target block contract. It is a specification artifact and is NOT implemented by the current PoW repository. network_id is the canonical SYJ identity; a Cosmos/CometBFT chain-id is derived externally from the same identity.",
   "type": "object",
   "required": [
     "version",
@@ -20,55 +20,65 @@
   "properties": {
     "version": {
       "type": "integer",
-      "minimum": 1
+      "minimum": 1,
+      "description": "Versioned production block contract identifier."
     },
     "height": {
       "type": "integer",
-      "minimum": 0
+      "minimum": 0,
+      "description": "Consensus block height."
     },
     "network_id": {
       "type": "string",
-      "pattern": "^[0-9a-f]{64}$"
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Canonical SYJ network identity. The block MUST match the active network identity exactly."
     },
     "parent_hash": {
       "type": "string",
-      "pattern": "^[0-9a-f]{64}$"
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Hash of the canonical parent block."
     },
     "timestamp": {
       "type": "number",
-      "minimum": 0
+      "minimum": 0,
+      "description": "Consensus-defined block time; exact production time encoding and bounds remain TBD — requires protocol/security/runtime review."
     },
     "proposer_validator_id": {
       "type": "string",
-      "minLength": 1
+      "minLength": 1,
+      "description": "Canonical identifier of the authorized proposer validator."
     },
     "transaction_root": {
       "type": "string",
-      "pattern": "^[0-9a-f]{64}$"
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Commitment to the ordered transaction set under the active block version."
     },
     "state_root": {
       "type": "string",
-      "pattern": "^[0-9a-f]{64}$"
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Authenticated post-state commitment under the active state-root contract."
     },
     "receipt_event_root": {
       "type": "string",
-      "pattern": "^[0-9a-f]{64}$"
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Commitment to deterministic receipts/events under the active block version."
     },
     "consensus_evidence": {
       "type": "object",
-      "description": "Runtime-defined authenticated evidence; exact schema TBD \u2014 requires CometBFT integration review.",
+      "description": "Authenticated consensus evidence sufficient to establish finalization. Exact CometBFT evidence schema is TBD — requires runtime/security review.",
       "additionalProperties": true
     },
     "commit_certificate": {
       "type": "object",
-      "description": "Runtime-defined commit certificate; exact schema TBD \u2014 requires CometBFT integration review.",
+      "description": "Authenticated commit certificate representing the required voting power. Exact encoding is TBD — requires runtime/security review.",
       "additionalProperties": true
     },
     "application_metadata": {
       "type": "object",
+      "description": "Non-consensus metadata permitted only where explicitly excluded from consensus-critical hashing/validation. Exact production fields are TBD — requires protocol/runtime review.",
       "additionalProperties": true
     }
   },
   "additionalProperties": false,
-  "$comment": "Maximum block size, exact root algorithms, evidence encoding, and production hash construction are TBD \u2014 requires protocol, security, and runtime review."
+  "$comment": "chain_id is not an independent SYJ protocol field. Cosmos/CometBFT chain-id is derived from network_id under ADR-013. Maximum block size, root algorithms, evidence encoding, and production hash construction are TBD — requires protocol, security, and runtime review."
 }

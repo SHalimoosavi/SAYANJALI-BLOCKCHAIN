@@ -41,7 +41,7 @@ The deterministic proposer selection mechanism MUST select exactly one proposer 
 
 ## 4. Validation and voting
 
-A validator MUST validate chain identity, block version, parent, transaction root, state transition, state root, receipt root, and proposer authorization before voting. Validators MUST NOT prevote or precommit a block that violates consensus rules.
+A validator MUST validate `network_id`, block version, parent, transaction root, state transition, state root, receipt root, and proposer authorization before voting. Validators MUST NOT prevote or precommit a block that violates consensus rules.
 
 ## 5. Two-thirds rule
 
@@ -65,11 +65,11 @@ Once a block has a valid commit certificate under the active protocol, it is fin
 
 ## 10. Equivocation evidence
 
-A validator signing conflicting consensus messages for the same height/round/step constitutes equivocation. Evidence MUST be independently verifiable and bound to chain identity. Evidence processing MUST be deterministic and MUST lead to the specified penalty lifecycle.
+A validator signing conflicting consensus messages for the same height/round/step constitutes equivocation. Evidence MUST be independently verifiable and bound to `network_id`. Evidence processing MUST be deterministic and MUST lead to the specified penalty lifecycle.
 
 ## 11. Message authentication and replay protection
 
-Every consensus-critical message MUST be authenticated, bound to chain/network identity, include height/round/step context, and be replay-protected (I-017). Transport encryption may provide confidentiality but is not a substitute for message-level authentication.
+Every consensus-critical message MUST be authenticated, bound to `network_id`, include height/round/step context, and be replay-protected (I-017). Transport encryption may provide confidentiality but is not a substitute for message-level authentication.
 
 ## 12. Partitions and restart
 
@@ -89,7 +89,7 @@ Insufficient voting power, conflicting proposals, invalid evidence, validator-se
 
 ## 16. Compatibility
 
-No current PoW block is automatically a BFT-finalized block. A migration boundary MUST explicitly define the last legacy block and first production-consensus genesis/transition state.
+No current PoW block is automatically a BFT-finalized block. A migration boundary MUST explicitly define the last legacy block and first production-consensus genesis/transition state. The production consensus identity is `network_id`; Cosmos/CometBFT `chain-id` is derived from it under ADR-013 and is not an independent consensus identity.
 
 ## 17. Required test vectors
 

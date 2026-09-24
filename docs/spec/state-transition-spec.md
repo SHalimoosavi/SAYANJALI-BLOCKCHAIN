@@ -31,7 +31,8 @@ A concrete state-tree technology is deliberately not implemented in Phase 9.
 
 ## 3. Genesis
 
-Genesis MUST uniquely determine the initial network state, chain identity, initial protocol version, authorized initial validators if any, and all consensus-relevant initial module state. A production genesis MUST NOT be created in this phase.
+Genesis MUST uniquely determine the initial network state, `network_id` identity, initial protocol version, authorized initial validators if any, and all consensus-relevant initial module state. A production genesis MUST NOT be created in this phase.
+The field-level genesis contract is defined by `genesis-spec.md`; this specification defines the state-machine role of genesis.
 
 Genesis material MUST be canonicalized before commitment. Any mismatch between declared network identity and independently derived identity MUST fail closed.
 
@@ -39,7 +40,7 @@ Genesis material MUST be canonicalized before commitment. Any mismatch between d
 
 For each finalized block:
 1. verify consensus evidence;
-2. verify parent and chain identity;
+2. verify parent and `network_id` identity;
 3. apply deterministic system-level transitions;
 4. process transactions in canonical order;
 5. apply fees and issuance under active rules;

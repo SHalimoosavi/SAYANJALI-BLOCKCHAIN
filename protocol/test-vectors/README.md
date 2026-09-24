@@ -43,7 +43,7 @@ The wallet public-key representation is the raw `VerifyingKey.to_string()` bytes
 
 ## P2P identity note
 
-The current authenticated P2P handshake carries protocol version, network name, genesis hash, identity, advertised address, capabilities and authentication data. `chain_id` is **not** in the current handshake wire payload. The current genesis hash is the strong chain-identity boundary used by handshake verification. This vector package does not add `chain_id` to the wire protocol.
+The current authenticated P2P handshake carries protocol version, network name, genesis hash, identity, advertised address, capabilities and authentication data. `network_id` is the canonical Phase 9 identity. The current V1/V2 handshake compatibility payload does not add a separate `chain_id` field. The current genesis hash remains a historical identity boundary for these vectors; Phase 9.2 does not create a second identity or rewrite the frozen vector bytes.
 
 ## Running
 
