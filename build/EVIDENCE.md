@@ -1,407 +1,262 @@
-# Build 1 Recovery — C-1 Evidence
+# Build 2A — C-2 Evidence
 
-## Baseline
+## Evidence rule
 
-Commit: `190f5cac5185e10d56e6f506e127e16efffcd7a7`
+This file records executed commands/results only. Proposed architecture is not treated as runtime evidence.
 
-Tree: `2443422fd5ccc356defd7739542980c3d472a5c7`
+## Baseline artifact
 
-Source ZIP: `SAYANJALI-BLOCKCHAIN-build1-source-190f5ca.zip`
+| Check | Status | Actual result |
+|---|---|---|
+| Frozen ZIP SHA-256 | PASS | `9701ce955acb188f7429a5f14e87c350ae29e251f8b386e0e84f51c3b2127aa1` |
+| ZIP integrity | PASS | `No errors detected in compressed data` |
+| ZIP entries | PASS | `407` |
+| Remote baseline commit fetch | PASS | GitHub connector resolved `9502979638e48a43519360a3215eca2cb84e6ce9` |
+| Remote Build 2A branch creation | NOT EXECUTED / BLOCKED | GitHub connector returned HTTP 403 `Resource not accessible by integration` |
 
-Source ZIP SHA-256: `5e5a39332200e913902644052348c892135c82b8e8731ddb1903d1a51fd1d4d1`
+The uploaded ZIP is a Git archive and therefore does not contain `.git` metadata. The tag object/ref itself was not independently resolved from inside the uploaded artifact.
 
-Historical Build 1: **NOT FOUND**
+## Phase 1 — source inspection
 
-Recovery: **IMPLEMENTED FROM AUTHORITATIVE PHASE 10.1 BASELINE**
+| Item | Status |
+|---|---|
+| I1 state persistence | CONFIRMED |
+| I2 4 MiB limit | CONFIRMED |
+| I3 state changes per block | CONFIRMED |
+| I4 reusable incremental state code | CONFIRMED |
+| I5 startup/restart/replay/reorg | CONFIRMED |
+| I6 current state root | CONFIRMED |
+| I7 reusable V3 code | CONFIRMED |
+| I8 delta journal interface targets | CONFIRMED as design targets |
+| I9 crash consistency | CONFIRMED current guarantees/gaps |
+| I10 test infrastructure | CONFIRMED inventory |
 
-## Implementation
+Audit observations 1-8 were independently re-located in `docs/protocol/c2/INSPECTION.md`.
 
-Changed source files:
+## Source-derived sizing
 
-- `internal/chain/chain.go`
-- `internal/chain/v2.go`
-- `internal/clock/clock.go`
-- `internal/node/api.go`
-- `internal/node/node.go`
-- `internal/p2pnode/network.go`
-- `pkg/protocol/v3params.go`
-- `internal/chain/c1_time_test.go`
-- `internal/node/c1_mining_test.go`
-- `cmd/build1_c1/main.go`
-- `docs/protocol/V3_DECISIONS.md`
-- `build/CHANGES.md`
-- `build/VALIDATE.sh`
-- `build/EVIDENCE.md`
-- `build/changes.patch`
-- `build/SHA256SUMS`
+Current valid address format is 43 bytes (`SYJ` + 40 hex characters).
 
-C-1 behavior:
+Current checkpoint account encoding is 67 bytes/account plus 106 fixed bytes.
 
-- V3 explicitly selectable through existing protocol version architecture.
-- V3 MTP lower bound is `MTP + 1`.
-- V3 first-ingress future bound is `Clock.Now() + 300s`.
-- V3 has no parent+120 future ceiling.
-- V1/V2 retain their existing parent+120 behavior.
-- Historical replay does not consult wall clock.
-- V3 mining uses `max(Clock.Now(), MTP+1)`.
-- V3 mining refuses when peer median is unavailable.
-- V3 mining refuses when legitimate peer median skew exceeds 60 seconds.
-- No P2P wire timestamp field was fabricated or added.
+Calculated uniform-address checkpoint sizes:
 
-## Required toolchain
+- 62,600 accounts: 4,194,306 bytes before the 64-byte journal block-hash prefix; exceeds the current 4,194,240-byte checkpoint payload limit by 66 bytes.
+- 200,000 accounts: 13,400,106 bytes before the journal block-hash prefix.
 
-Command:
+Status: **NOT MEASURED** as runtime storage tests. These are source-derived arithmetic checks only.
 
-`go version`
+## Phase 2 — design
 
-Actual output:
+`docs/protocol/c2/DESIGN.md` created.
 
-`go version go1.27.0 android/arm64`
+D1-D7 all explicitly remain:
 
-Required:
+`OWNER DECISION REQUIRED`
 
-`go1.27.1`
+No production design option was activated.
 
-Toolchain attempt:
+## Phase 3 — vector generation
 
-The environment attempted to obtain the required Go `1.27.1` toolchain, but
-the required toolchain was unavailable in the execution environment.
+### Generator
 
-Required Go 1.27.1 validation: **NOT EXECUTED — Go 1.27.1 unavailable**.
-
-The installed Go version used for the successful non-race validation was:
-
-`go version go1.27.0 android/arm64`
-
-## Validation commands
-
-### `gofmt -l .`
-
-Executed.
-
-Output: **empty**.
-
-Result: **PASS**.
-
-### `go vet ./...`
-
-Executed with Go 1.27.0 on android/arm64.
-
-Result: **PASS**.
-
-Exit code: `0`.
-
-### `go build ./...`
-
-Executed with Go 1.27.0 on android/arm64.
-
-Result: **PASS**.
-
-Exit code: `0`.
-
-### `go test ./...`
-
-Executed with Go 1.27.0 on android/arm64.
-
-Result: **PASS**.
-
-All repository packages passed.
-
-### `go test -race ./...`
-
-Attempted with Go 1.27.0 on android/arm64.
-
-Result: **NOT EXECUTED — unsupported on android/arm64**.
-
-Actual output:
-
-`-race is not supported on android/arm64`
-
-Exit code: `2`.
-
-### C-1 tests
-
-Chain command:
-
-`go test ./internal/chain ./internal/node -run 'C1|C-1' -count=1 -v`
-
-The C-1 chain tests passed after the injected-clock correction.
-
-The V3 mining safety test was separately executed:
-
-`go test ./internal/node -run 'TestC1V3MiningClockSafety' -count=1 -v`
-
-Result: **PASS**.
-
-### Compatibility tests
-
-The full repository test suite included the existing compatibility packages and passed under Go 1.27.0 android/arm64.
-
-### Restart/reload tests
-
-The C-1 replay/restart coverage executed successfully as part of the C-1 chain tests.
-
-Replay was tested with clocks decades ahead and decades behind.
-
-Result: **PASS**.
-
-### Required Go 1.27.1
-
-Required exact toolchain:
-
-`go1.27.1`
-
-Actual available toolchain:
-
-`go1.27.0 android/arm64`
-
-Go 1.27.1 was not available in the current Android/ARM64 environment.
-
-Required Go 1.27.1 validation: **NOT EXECUTED**.
-
-## Auxiliary validation
-
-
-This auxiliary attempt does not count as required validation and no production `go.mod` was modified.
-
-## SHA256SUMS
-
-`build/SHA256SUMS` contains hashes calculated from the final working tree for selected review artifacts. The checksum file deliberately excludes itself and the final ZIP to avoid self-referential hashes.
-
-The final ZIP SHA-256 is calculated after packaging and is reported in the delivery report rather than embedded inside the ZIP.
-
-## Scope status
-
-C-1: **DONE-NOT-VERIFIED**
-
-C-2 OPEN
-H-1 OPEN
-H-2 OPEN
-H-3 OPEN
-H-4 OPEN
-H-5 OPEN
-H-6 OPEN
-H-7 OPEN
-H-8 OPEN
-M-1 OPEN
-M-2 OPEN
-M-3 OPEN
-M-4 OPEN
-M-5 OPEN
-M-6 OPEN
-M-7 OPEN
-M-8 OPEN
-L-1 OPEN
-L-2 OPEN
-L-3 OPEN
-
-## Review limitations
-
-The deterministic harness records seed, block count, accepted/rejected blocks, elapsed time, difficulty observations, cumulative work, final height/tip/state root, replay result, and restart result.
-
-The implementation was not declared production-ready, mainnet-ready, public-testnet-ready, or fully audited. Required Go 1.27.1 compilation, unit, race, and vet evidence could not be produced in the current execution environment.
-
-## `build/VALIDATE.sh` execution
-
-The validation script intentionally requires exact Go `1.27.1`.
-
-With the currently installed Go `1.27.0 android/arm64`, the script is
-expected to fail its exact-toolchain gate before running the subsequent
-commands.
-
-This failure is not represented as a successful validation.
-
-
-## Deterministic C-1 harness evidence
-
-The deterministic Build 1 harness was executed twice with seed `20261001`.
-
-### Run 1
+Command executed:
 
 ```text
-seed=20261001
-blocks=64
-accepted=19
-rejected=45
-elapsed=38.602743058s
-difficulty_observations=[4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4]
-cumulative_work=1245185
-final_height=19
-final_tip=00007df91e02a3a89ab1f445f2e024d53d5ab27c732f6303733cfd00962a4f2d
-state_root=77627aa058556e65dac3e7deed04d9cf7fce3e95f3208ef59ceabfe995cf69d3
-replay_result=PASS
-restart_result=PASS
+python3 scripts/c2/generate_state_smt_v3_vectors.py
 ```
 
-### Run 2
+Python version:
 
 ```text
-seed=20261001
-blocks=64
-accepted=19
-rejected=45
-elapsed=33.593833633s
-difficulty_observations=[4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4]
-cumulative_work=1245185
-final_height=19
-final_tip=00007df91e02a3a89ab1f445f2e024d53d5ab27c732f6303733cfd00962a4f2d
-state_root=77627aa058556e65dac3e7deed04d9cf7fce3e95f3208ef59ceabfe995cf69d3
-replay_result=PASS
-restart_result=PASS
+Python 3.13.5
 ```
 
-The two runs were compared after removing only the nondeterministic `elapsed` line.
+Python dependencies: standard library only.
 
-Result:
+### First generation
 
-**PASS – deterministic consensus/result fields matched exactly.**
+PASS — generator completed and produced 10 vectors / 1,000-account V8.
 
-The harness also independently verified:
+### Second generation
 
-- replay with a clock ten years ahead;
-- restart/reload with a clock ten years behind.
+PASS — generator completed again.
 
-Both returned `PASS`.
+### Reproducibility
 
-## C-1 implementation correction discovered during validation
+PASS.
 
-The initial C-1 implementation accepted an injected clock in
-`openWithProtocolAndClock` but initialized the Chain with a real clock
-instead of the supplied clock.
+Both generated vector files had SHA-256:
 
-The defect was:
+`3941cc06c641557f896a6f6235e9a94abe91ed66eb99949e0069860e2d9d7fc2`
 
-```diff
-+ clock:           clock.RealClock{},
-+ clock:           clk,
+### Vector file
+
+PASS — `protocol/test-vectors/state-smt-v3.json` exists and contains V1-V10 plus 257 empty-subtree hashes.
+
+### Go verifier
+
+Command executed:
+
+```text
+GO111MODULE=off go test ./scripts/c2 -run TestFrozenStateSMTV3Vectors -count=1 -v
 ```
-
-This was discovered by the `+301 seconds` future-boundary test:
-the fixed-clock `+301s` case was initially accepted.
-
-After correcting the clock injection, the C-1 future-boundary tests passed:
-
-- `Clock.Now() + 300s`: accepted
-- `Clock.Now() + 301s`: rejected
-
-No unrelated protocol or consensus change was introduced for this
-correction.
-
-## Validation status
-
-The repository was successfully formatted, vetted, built, and tested
-with the installed Go `1.27.0 android/arm64` toolchain.
-
-The required exact Go `1.27.1` toolchain was unavailable in the current
-environment, so exact-toolchain validation remains **NOT EXECUTED**.
-
-`go test -race ./...` is **NOT EXECUTED** because the installed
-Android/ARM64 environment reports that `-race` is unsupported.
-
-Accordingly, the final C-1 status remains:
-
-**DONE-NOT-VERIFIED**
-
-The implementation is not being represented as production-ready, mainnet-ready, public-testnet-ready, or fully audited.
-## Build 1.1 maintenance patch
-
-Build 1.1 scope is restricted to:
-
-1. `TestC1V3ReplayDoesNotCallClockNow` — a counting-clock proof that opening and replaying persisted V3 history performs exactly zero `Clock.Now()` calls.
-2. Explicit `V3SoloBootstrapMining` operator mode, disabled by default, with a bounded local-clock sanity check.
-
-No protocol version change, V3 consensus-rule change, P2P wire-format change, C-2 implementation, or H/M finding implementation was performed.
-
-### Bootstrap behavior
-
-Default configuration sets:
-
-- `V3SoloBootstrapMining = false`
-- `V3SoloBootstrapClockSanitySeconds = 300`
-
-When disabled, unavailable peer median continues to produce:
-
-`V3 mining refused: peer median clock unavailable`
-
-When explicitly enabled, the miner may proceed without peer median only if the local clock is not before MTP and is no more than the configured sanity window ahead of MTP. Otherwise it returns:
-
-`V3 bootstrap mining refused because local clock sanity validation failed: ...`
-
-The miner still selects timestamps using the existing V3 `max(local clock, MTP+1)` rule, and block ingress still uses the existing 300-second first-ingress bound.
-
-### Validation limitation
-
-Required exact toolchain:
-
-`go1.27.1`
-
-Current audit environment:
-
-`go version go1.23.2 linux/amd64`
-
-Required Build 1.1 validation is **NOT EXECUTED**.
-
-The local exact-toolchain attempt was:
-
-`GOTOOLCHAIN=local go test ./internal/chain ./internal/node -run 'TestC1' -count=1 -v`
 
 Actual result:
 
-`go: go.mod requires go >= 1.27 (running go 1.23.2; GOTOOLCHAIN=local)`
+```text
+=== RUN   TestFrozenStateSMTV3Vectors
+--- PASS: TestFrozenStateSMTV3Vectors (0.17s)
+PASS
+ok   _/mnt/data/syj-build2a/work/scripts/c2  0.170s
+```
 
-No Go 1.27.1 test, race, build, vet, or harness results are claimed from this environment.
+Toolchain used for this local verifier:
 
-## Build 1.1 changed-file audit
+`go1.23.2 linux/amd64`
 
-Changed implementation/test files:
+This is **ADVISORY**, not the required Ubuntu Go 1.27.1 authority.
 
-- `internal/node/node.go`
-- `internal/node/api.go`
-- `internal/node/c1_mining_test.go`
-- `internal/chain/c1_time_test.go`
+## Phase 4 — Build 2B plan
 
-Added verification workflow:
+`docs/protocol/c2/BUILD2B_PLAN.md` created.
 
-- `.github/workflows/build1-c1-verification.yml`
+Required planning coverage:
 
-Added Build 1.1 patch evidence:
+- 70,000-account Accept -> checkpoint -> restart -> Open: SPECIFIED
+- 200,000-account Ubuntu Go 1.27.1 CI test: SPECIFIED
+- every-byte-offset corruption injection: SPECIFIED
+- deep reorg vs clean replay: SPECIFIED
+- V1/V2 byte-for-byte compatibility: SPECIFIED
+- performance metrics: SPECIFIED
 
-- `build/build1.1.patch`
+No Build 2B implementation executed.
 
-No changes were made to:
+## Repository validation
 
-- `go.mod`
-- `go.sum`
-- `internal/p2pnode/network.go`
-- `pkg/protocol/v3params.go`
-- production consensus/state/PoW/transaction/tokenomics implementations.
+### `go.mod` / `go.sum`
 
-## Build 1.1 local evidence
+`cmp` verification against the frozen uploaded baseline: PASS for both files; no changes were made.
 
-`gofmt -l .` was executed with the available Go formatter and produced empty output.
+Inspection shows the frozen baseline declares Go 1.27.1 and one existing secp256k1 dependency. No changes were made to these files in the Build 2A working copy.
 
-Current local toolchain:
+### Go toolchain
 
-`go version go1.23.2 linux/amd64`
+`GOTOOLCHAIN=local go version` returned `go version go1.23.2 linux/amd64`. An attempt to use the repository-required Go 1.27.1 toolchain could not download the toolchain because external network resolution is unavailable.
 
-Required toolchain:
+Authoritative Go 1.27.1 Ubuntu CI: **NOT EXECUTED for Build 2A**.
 
-`go1.27.1`
+### gofmt
 
-`GOTOOLCHAIN=local go vet ./...` — **NOT EXECUTED**; the Go 1.23.2 toolchain is below the module's required Go 1.27 level.
+`gofmt -w scripts/c2/state_smt_v3_vectors_test.go` — PASS for the new Go verifier source.
 
-`GOTOOLCHAIN=local go build ./...` — **NOT EXECUTED**; same toolchain gate.
+Repository-wide `gofmt -l .` under the required Go 1.27.1 toolchain: **NOT EXECUTED**.
 
-`GOTOOLCHAIN=local go test ./...` — **NOT EXECUTED**; same toolchain gate.
+### vet
 
-`GOTOOLCHAIN=local go test -race ./...` — **NOT EXECUTED**; same toolchain gate.
+`go vet ./...` with authoritative Go 1.27.1: **NOT EXECUTED**.
 
-Dedicated C-1 tests, zero-call replay test, bootstrap tests, and the deterministic harness under Go 1.27.1 are **NOT EXECUTED**.
+### full test suite
 
-Actual toolchain-gate output:
+`go test ./...` with authoritative Go 1.27.1: **NOT EXECUTED**.
 
-`go: go.mod requires go >= 1.27 (running go 1.23.2; GOTOOLCHAIN=local)`
+### race
 
-GitHub write/PR creation from this environment is **NOT EXECUTED** because the connected GitHub integration rejected branch creation with HTTP 403 `Resource not accessible by integration`.
+`go test -race ./...` with authoritative Go 1.27.1: **NOT EXECUTED**.
 
-No claim is made that the Build 1.1 branch, commit, or PR exists remotely.
+### vector-specific test
+
+PASS locally as recorded above; authoritative CI version: NOT EXECUTED.
+
+## Production-code boundary
+
+Working-copy changes are restricted to documentation, vector data, generator, verifier test, and build evidence artifacts.
+
+No production consensus/storage/state/mempool/P2P/PoW/difficulty/tokenomics/protocol activation change was made.
+
+## Finding status — authoritative 21-finding list
+
+| # | Finding | Status |
+|---:|---|---|
+| 1 | C-1 | VERIFIED |
+| 2 | C-2 | IN PROGRESS |
+| 3 | H-1 | OPEN |
+| 4 | H-2 | OPEN |
+| 5 | H-3 | OPEN |
+| 6 | H-4 | OPEN |
+| 7 | H-5 | OPEN |
+| 8 | H-6 | OPEN |
+| 9 | H-7 | OPEN |
+| 10 | H-8 | OPEN |
+| 11 | M-1 | OPEN |
+| 12 | M-2 | OPEN |
+| 13 | M-3 | OPEN |
+| 14 | M-4 | OPEN |
+| 15 | M-5 | OPEN |
+| 16 | M-6 | OPEN |
+| 17 | M-7 | OPEN |
+| 18 | M-8 | OPEN |
+| 19 | L-1 | OPEN |
+| 20 | L-2 | OPEN |
+| 21 | L-3 | OPEN |
+
+The identifiers are the complete 21-item list established in the frozen baseline's deferred-findings material (`docs/protocol/V3_DECISIONS.md:108-110`).
+
+## Build 2A status
+
+Because the required remote branch creation and authoritative Go 1.27.1 Build 2A CI could not be executed from this environment, this package is **INCOMPLETE/BLOCKED**, not represented as CI-verified.
+
+The design/vector work itself is locally reproducible, and the SMT vectors are frozen by checksum pending owner review.
+
+## Build 2A artifact validation
+
+Artifact command executed after packaging:
+
+```text
+unzip -t /mnt/data/syj-build-02A-C2-design-20261002.zip
+```
+
+Actual result:
+
+```text
+No errors detected in compressed data of /mnt/data/syj-build-02A-C2-design-20261002.zip.
+```
+
+Artifact entry count: `20` ZIP entries including directories.
+
+Artifact contents were scanned for `.git`, `.env`, private-key/certificate extensions, database files, logs, and generated binary extensions; no forbidden entries were present.
+
+## Git patch-scope limitation
+
+The uploaded frozen baseline is a Git archive without `.git` metadata. Therefore the exact commands:
+
+```text
+git diff --stat v0.9.6-build1.1-c1...HEAD
+git diff --name-status v0.9.6-build1.1-c1...HEAD
+```
+
+are **NOT EXECUTED** in this environment.
+
+A byte-for-byte comparison of every original file against the Build 2A working copy was executed, excluding only the intentionally replaced `build/CHANGES.md` and `build/EVIDENCE.md`; it passed. Explicit production-sensitive files were also byte-identical.
+
+## Post-package PR validation addendum — 2026-10-02
+
+Historical entries above are intentionally preserved.
+
+| Check | Status | Evidence |
+|---|---|---|
+| Current PR branch | PASS | PR #16 head `233ef88550ba3b50cd336bf48244c5c0c365985d` |
+| C-1 ancestry | PASS | Remote comparison `v0.9.6-build1.1-c1...build2a-c2-design`: ahead 2, behind 0, merge base `9502979638e48a43519360a3215eca2cb84e6ce9` |
+| main unchanged | PASS | `refs/heads/main` resolves to `9502979638e48a43519360a3215eca2cb84e6ce9` |
+| PR #16 | PASS | OPEN, NOT MERGED, mergeable |
+| Build 1 C-1 Verification | PASS | Actions run `37067226240` |
+| Production Validation | PASS | Actions run `37067226109` |
+| Production Go job | PASS | `go test ./...`, `go vet ./...`, `go build ./...`, `go test -race ./...`, `govulncheck ./...`, `staticcheck ./...`, `gosec ./...` all successful |
+| Production Python job | PASS | Python 3.12; pytest, compileall, pip-audit and bandit successful |
+| Production-code diff | PASS | Baseline-to-head compare lists only docs/build evidence/vector/generator/verifier files |
+| Generator rerun | PASS | Python 3.13.5; two generations identical; SHA `3941cc06c641557f896a6f6235e9a94abe91ed66eb99949e0069860e2d9d7fc2` |
+| Vector byte equality | PASS | Regenerated vector byte-for-byte equals committed Build 2A vector |
+| Local Go vector verifier | PASS / NON-AUTHORITATIVE | Go 1.23.2 linux/amd64; `GO111MODULE=off go test ./scripts/c2 -run TestFrozenStateSMTV3Vectors -count=1 -v` |
+| Local Termux working tree | NOT VERIFIED | This audit environment cannot execute the user's local `git status` directly |
+
+CI success does not change the protocol status. D1-D7 and the blocking ambiguity register remain unresolved.
