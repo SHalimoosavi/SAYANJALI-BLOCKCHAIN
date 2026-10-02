@@ -238,3 +238,25 @@ git diff --name-status v0.9.6-build1.1-c1...HEAD
 are **NOT EXECUTED** in this environment.
 
 A byte-for-byte comparison of every original file against the Build 2A working copy was executed, excluding only the intentionally replaced `build/CHANGES.md` and `build/EVIDENCE.md`; it passed. Explicit production-sensitive files were also byte-identical.
+
+## Post-package PR validation addendum — 2026-10-02
+
+Historical entries above are intentionally preserved.
+
+| Check | Status | Evidence |
+|---|---|---|
+| Current PR branch | PASS | PR #16 head `233ef88550ba3b50cd336bf48244c5c0c365985d` |
+| C-1 ancestry | PASS | Remote comparison `v0.9.6-build1.1-c1...build2a-c2-design`: ahead 2, behind 0, merge base `9502979638e48a43519360a3215eca2cb84e6ce9` |
+| main unchanged | PASS | `refs/heads/main` resolves to `9502979638e48a43519360a3215eca2cb84e6ce9` |
+| PR #16 | PASS | OPEN, NOT MERGED, mergeable |
+| Build 1 C-1 Verification | PASS | Actions run `37067226240` |
+| Production Validation | PASS | Actions run `37067226109` |
+| Production Go job | PASS | `go test ./...`, `go vet ./...`, `go build ./...`, `go test -race ./...`, `govulncheck ./...`, `staticcheck ./...`, `gosec ./...` all successful |
+| Production Python job | PASS | Python 3.12; pytest, compileall, pip-audit and bandit successful |
+| Production-code diff | PASS | Baseline-to-head compare lists only docs/build evidence/vector/generator/verifier files |
+| Generator rerun | PASS | Python 3.13.5; two generations identical; SHA `3941cc06c641557f896a6f6235e9a94abe91ed66eb99949e0069860e2d9d7fc2` |
+| Vector byte equality | PASS | Regenerated vector byte-for-byte equals committed Build 2A vector |
+| Local Go vector verifier | PASS / NON-AUTHORITATIVE | Go 1.23.2 linux/amd64; `GO111MODULE=off go test ./scripts/c2 -run TestFrozenStateSMTV3Vectors -count=1 -v` |
+| Local Termux working tree | NOT VERIFIED | This audit environment cannot execute the user's local `git status` directly |
+
+CI success does not change the protocol status. D1-D7 and the blocking ambiguity register remain unresolved.
