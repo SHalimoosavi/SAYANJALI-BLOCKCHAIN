@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"os"
 	"reflect"
-	"sort"
 	"testing"
 )
 
@@ -135,60 +134,6 @@ func (t *tree) subroot(level int, items []account, e [depth + 1][]byte) []byte {
 	b := append(append([]byte{}, nodeDomain...), lh...)
 	b = append(b, rh...)
 	return sha(b)
-}
-
-func (t *tree) nodeHashes() map[string]string {
-	e := emptyHashes()
-	out := map[string]string{}
-	for _, a := range t.leaves {
-		t.collect(0, []account{a}, e, out)
-	}
-	return out
-}
-func (t *tree) collect(level int, items []account, e [depth + 1][]byte, out map[string]string) []byte {
-	if level == depth {
-		h := leafHash(items[0])
-		out[fmt.Sprintf("%d:%s", level, bigIndex(keyFor(items[0].Address)).String())] = hex.EncodeToString(h)
-		return h
-	}
-	left, right := make([]account, 0), make([]account, 0)
-	for _, a := range items {
-		if bitAt(keyFor(a.Address), level+1) == 0 {
-			left = append(left, a)
-		} else {
-			right = append(right, a)
-		}
-	}
-	var lh, rh []byte
-	if len(left) == 0 {
-		lh = e[level+1]
-	} else {
-		lh = t.collect(level+1, left, e, out)
-	}
-	if len(right) == 0 {
-		rh = e[level+1]
-	} else {
-		rh = t.collect(level+1, right, e, out)
-	}
-	b := append(append([]byte{}, nodeDomain...), lh...)
-	b = append(b, rh...)
-	h := sha(b)
-	idx := subtreeIndex(items, level)
-	out[fmt.Sprintf("%d:%s", level, idx)] = hex.EncodeToString(h)
-	return h
-}
-
-type bigIndex [32]byte
-
-func (b bigIndex) String() string { return hex.EncodeToString(b[:]) }
-func subtreeIndex(items []account, level int) string {
-	var x [32]byte
-	key := keyFor(items[0].Address)
-	bits := level
-	for i := 0; i < bits; i++ {
-		x[i/8] |= ((key[i/8] >> uint(7-i%8)) & 1) << uint(7-i%8)
-	}
-	return hex.EncodeToString(x[:])
 }
 
 func asAccount(m map[string]any) account {
@@ -349,9 +294,3 @@ func TestFrozenStateSMTV3Vectors(t *testing.T) {
 		}
 	}
 }
-
-// Keep imports and the reference representation intentionally self-contained.
-var _ = sort.Strings
-var _ = u32
-var _ = u64
-var _ = fmt.Sprintf
