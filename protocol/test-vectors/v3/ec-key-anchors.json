@@ -1,0 +1,30 @@
+{
+  "format": "syj-c2-stage1-v1",
+  "curve": "secp256k1",
+  "anchors": [
+    {
+      "name": "key-1",
+      "private_key_hex": "0000000000000000000000000000000000000000000000000000000000000001",
+      "public_key_raw_hex": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8",
+      "public_key_compressed_hex": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+      "public_key_sha256": "af533e027d9d6ccc0958c470c26ea9d96a9b76fd8cb5737f8d38353c03b5d7a4",
+      "address": "SYJaf533e027d9d6ccc0958c470c26ea9d96a9b76fd"
+    },
+    {
+      "name": "key-2",
+      "private_key_hex": "0000000000000000000000000000000000000000000000000000000000000002",
+      "public_key_raw_hex": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee51ae168fea63dc339a3c58419466ceaeef7f632653266d0e1236431a950cfe52a",
+      "public_key_compressed_hex": "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+      "public_key_sha256": "694a228d3e09720e1e8387fac6bb85e9a2d5841fa918f440a87f85c35a39dabd",
+      "address": "SYJ694a228d3e09720e1e8387fac6bb85e9a2d5841f"
+    },
+    {
+      "name": "key-n-minus-1",
+      "private_key_hex": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364140",
+      "public_key_raw_hex": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798b7c52588d95c3b9aa25b0403f1eef75702e84bb7597aabe663b82f6f04ef2777",
+      "public_key_compressed_hex": "0379be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+      "public_key_sha256": "a139031e68bee75cfbc184adc1d2801c7f9ef94cdba125de167c63dc303d6863",
+      "address": "SYJa139031e68bee75cfbc184adc1d2801c7f9ef94c"
+    }
+  ]
+}

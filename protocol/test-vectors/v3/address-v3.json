@@ -1,0 +1,27 @@
+{
+  "format": "syj-c2-stage1-address-v1",
+  "rule": "SYJ + first 40 hex chars of SHA-256(UTF-8(public_key_hex)); suffix canonical lowercase",
+  "vectors": [
+    {
+      "name": "key-1",
+      "public_key_hex": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8",
+      "address": "SYJaf533e027d9d6ccc0958c470c26ea9d96a9b76fd",
+      "length": 43,
+      "suffix_lowercase": true
+    },
+    {
+      "name": "key-2",
+      "public_key_hex": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee51ae168fea63dc339a3c58419466ceaeef7f632653266d0e1236431a950cfe52a",
+      "address": "SYJ694a228d3e09720e1e8387fac6bb85e9a2d5841f",
+      "length": 43,
+      "suffix_lowercase": true
+    },
+    {
+      "name": "key-n-minus-1",
+      "public_key_hex": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798b7c52588d95c3b9aa25b0403f1eef75702e84bb7597aabe663b82f6f04ef2777",
+      "address": "SYJa139031e68bee75cfbc184adc1d2801c7f9ef94c",
+      "length": 43,
+      "suffix_lowercase": true
+    }
+  ]
+}
