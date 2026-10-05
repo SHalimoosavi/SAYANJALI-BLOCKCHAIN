@@ -1,0 +1,73 @@
+{
+  "format": "syj-c2-stage1-negative-v1",
+  "ec": [
+    {
+      "case": "zero_private_key",
+      "private_key_hex": "0000000000000000000000000000000000000000000000000000000000000000",
+      "expected": "reject"
+    },
+    {
+      "case": "order_private_key",
+      "private_key_hex": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141",
+      "expected": "reject"
+    },
+    {
+      "case": "oversized_private_key",
+      "private_key_hex": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364142",
+      "expected": "reject"
+    },
+    {
+      "case": "malformed_public_key_length",
+      "public_key_hex": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "expected": "reject"
+    },
+    {
+      "case": "off_curve_public_key",
+      "public_key_hex": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+      "expected": "reject"
+    },
+    {
+      "case": "high_s_signature",
+      "description": "valid r with s=N-original_s",
+      "expected": "reject"
+    }
+  ],
+  "transaction": [
+    {
+      "case": "wrong_version",
+      "expected": "reject"
+    },
+    {
+      "case": "wrong_chain_id",
+      "expected": "reject"
+    },
+    {
+      "case": "zero_amount",
+      "expected": "reject"
+    },
+    {
+      "case": "zero_fee_is_structurally distinct but policy-dependent",
+      "expected": "not a Stage-1 validity claim"
+    },
+    {
+      "case": "tampered_amount",
+      "expected": "reject"
+    },
+    {
+      "case": "tampered_signature",
+      "expected": "reject"
+    },
+    {
+      "case": "tampered_tx_id",
+      "expected": "reject"
+    },
+    {
+      "case": "uppercase_address_suffix",
+      "expected": "reject"
+    },
+    {
+      "case": "wrong_tx_domain",
+      "expected": "reject"
+    }
+  ]
+}
