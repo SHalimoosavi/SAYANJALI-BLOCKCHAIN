@@ -15,16 +15,21 @@ import (
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/transaction"
 )
 
+type rateLimitEntry struct {
+	bucket   *security.TokenBucket
+	lastSeen time.Time
+}
+
 type API struct {
 	n              *Node
 	rateMu         sync.Mutex
-	rates          map[string]*security.TokenBucket
+	rates          map[string]*rateLimitEntry
 	maxRateEntries int
 }
 
 func (n *Node) ServeAPI() *http.Server {
 	mux := http.NewServeMux()
-	a := &API{n: n, rates: make(map[string]*security.TokenBucket), maxRateEntries: 4096}
+	a := &API{n: n, rates: make(map[string]*rateLimitEntry), maxRateEntries: 4096}
 	mux.HandleFunc("/health", a.health)
 	mux.HandleFunc("/status", a.status)
 	mux.HandleFunc("/peers", a.peers)
@@ -88,20 +93,38 @@ func (a *API) allowMutationRequest(r *http.Request) bool {
 	if err != nil || host == "" {
 		host = r.RemoteAddr
 	}
+	if a.maxRateEntries < 1 {
+		return false
+	}
+	now := time.Now()
 	a.rateMu.Lock()
 	defer a.rateMu.Unlock()
-	b := a.rates[host]
-	if b == nil {
+
+	entry := a.rates[host]
+	if entry == nil {
 		if len(a.rates) >= a.maxRateEntries {
-			for key := range a.rates {
-				delete(a.rates, key)
-				break
+			oldestKey := ""
+			var oldest time.Time
+			for key, candidate := range a.rates {
+				if oldestKey == "" || candidate.lastSeen.Before(oldest) ||
+					(candidate.lastSeen.Equal(oldest) && key < oldestKey) {
+					oldestKey = key
+					oldest = candidate.lastSeen
+				}
+			}
+			if oldestKey != "" {
+				delete(a.rates, oldestKey)
 			}
 		}
-		b, _ = security.NewTokenBucket(20, 40, time.Now())
-		a.rates[host] = b
+		bucket, err := security.NewTokenBucket(20, 40, now)
+		if err != nil {
+			return false
+		}
+		entry = &rateLimitEntry{bucket: bucket}
+		a.rates[host] = entry
 	}
-	return b.Allow(time.Now(), 1)
+	entry.lastSeen = now
+	return entry.bucket.Allow(now, 1)
 }
 
 func securityHeaders(next http.Handler) http.Handler {
