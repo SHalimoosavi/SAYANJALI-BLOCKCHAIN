@@ -14,7 +14,12 @@ import (
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/transaction"
 )
 
-type rateLimitEntry struct {\n\tbucket   *security.TokenBucket\n\tlastSeen time.Time\n}\n\ntype API struct {
+type rateLimitEntry struct {
+	bucket   *security.TokenBucket
+	lastSeen time.Time
+}
+
+type API struct {
 	n              *Node
 	rateMu         sync.Mutex
 	rates          map[string]*rateLimitEntry
