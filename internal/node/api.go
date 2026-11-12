@@ -88,6 +88,9 @@ func (a *API) requireAuth(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 func (a *API) allowMutationRequest(r *http.Request) bool {
+	if a.maxRateEntries < 1 {
+		return false
+	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil || host == "" {
 		host = r.RemoteAddr
