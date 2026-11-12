@@ -89,3 +89,16 @@ The first exact Go 1.27.1 race+coverage run completed successfully:
 Notable package coverage from that run: chain 64.3%, node 57.9%, P2P 75.4%, P2P node 62.3%, security 75.6%, state commitment 97.0%, storage 59.6%, tokenomics 60.2%, transaction 31.2%, consensus 15.8%, block 38.9%.
 
 Because the subsequent vulnerability scan found Go 1.27.1 standard-library vulnerabilities, the workflow in this PR is updated to Go 1.27.4 for future runs. The Go 1.27.1 result above remains the exact requested baseline measurement.
+
+## Go 1.27.4 security maintenance verification
+
+PR #26 completed successfully:
+
+- [Production Validation run 43135610714](https://github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/actions/runs/43135610714)
+- [Build 1 C-1 Verification run 43135610683](https://github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/actions/runs/43135610683)
+
+On Go 1.27.4, the following all passed: `go test ./...`, `go vet ./...`, `go build ./...`, `go test -race ./...`, `govulncheck ./...`, `staticcheck ./...` and `gosec ./...`.
+
+The gosec directory-permission warning was addressed with a narrowly scoped, justified G302 annotation: the identity directory is deliberately owner-only mode 0700; directories require owner execute permission, so 0600 is not a valid secure directory mode.
+
+The Go 1.27.4 update is verified on its PR branch but is not yet merged into main. Other audit PRs based on main may continue to show a govulncheck failure until this toolchain PR is merged and their merge refs use the patched toolchain.
