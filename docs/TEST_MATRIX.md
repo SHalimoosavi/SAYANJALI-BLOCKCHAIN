@@ -57,13 +57,13 @@ The current baseline Python result is 262 passed, 2 warnings. The Go result is r
 
 ## Coverage workflow
 
-The audit coverage workflow runs Go 1.27.1 and executes:
+The audit coverage workflow was first executed on Go 1.27.1 as required for this audit. After the vulnerability recheck, its ongoing configuration was moved to Go 1.27.4. It executes:
 
 - `go test -race -coverprofile=coverage.out ./...`
 - `go tool cover -func=coverage.out`
 - upload the coverage profile as a workflow artifact.
 
-Coverage remains NOT PRODUCED for the baseline commit until this workflow completes successfully on a review PR.
+The first coverage run completed successfully; its 52.6% aggregate result and artifact are recorded above.
 
 ## Subsequent Go vulnerability recheck (2026-11-12)
 
