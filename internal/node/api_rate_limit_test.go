@@ -18,7 +18,7 @@ func TestMutationRateLimiterStateIsBoundedAndEvictsLeastRecentlyUsed(t *testing.
 	}
 	request(1)
 	request(2)
-	request(1001)
+	request(1)
 	request(3)
 	if len(a.rates) != 2 {
 		t.Fatalf("rate limiter retained %d entries, want 2", len(a.rates))
@@ -49,5 +49,17 @@ func TestMutationRateLimiterNeverExceedsConfiguredCapacity(t *testing.T) {
 	}
 	if got := len(a.rates); got != capacity {
 		t.Fatalf("rate limiter retained %d entries, want %d", got, capacity)
+	}
+}
+
+func TestMutationRateLimiterFailsClosedWithoutCapacity(t *testing.T) {
+	a := &API{rates: make(map[string]*rateLimitEntry)}
+	r := httptest.NewRequest("POST", "http://node.invalid/mine", nil)
+	r.RemoteAddr = "192.0.2.250:3030"
+	if a.allowMutationRequest(r) {
+		t.Fatal("rate limiter accepted a request without a configured capacity")
+	}
+	if len(a.rates) != 0 {
+		t.Fatalf("rate limiter created %d entries without a configured capacity", len(a.rates))
 	}
 }
