@@ -1,192 +1,83 @@
-# SAYANJALI BLOCKCHAIN --- Security Model
+# SAYANJALI BLOCKCHAIN security policy
 
 ## Scope
 
-This document describes the security posture observed at the Phase 3
-checkpoint. It does not claim perfect security.
+This policy covers the SAYANJALI BLOCKCHAIN source repository, node software, protocol implementation, reference implementation, build workflows and project-operated infrastructure.
 
-## Threat matrix
+This document describes a reporting and triage process. It does not claim that the software has been independently audited or is safe for mainnet use.
 
-  --------------------------------------------------------------------------
-  Threat                  Current status          Notes
-  ----------------------- ----------------------- --------------------------
-  Double spending         Mitigated               Confirmed-balance state
-                                                  validation plus mempool
-                                                  pending-spend admission
+## Reporting a vulnerability
 
-  Forged transactions     Mitigated               SECP256k1 signature
-                                                  verification and
-                                                  sender/public-key binding
+Send vulnerability reports to:
 
-  Forged blocks           Mitigated               Header hash, PoW and chain
-                                                  validation
+**shalimoosavi@gmail.com**
 
-  Coinbase inflation      Mitigated               Exact reward and
-                                                  maximum-supply enforcement
+Do not publish exploit details, proof-of-concept code, private keys, credentials or unpatched vulnerability information in public issues or pull requests.
 
-  Supply overflow         Mitigated               Integer base units and
-                                                  replayed supply ceiling
+A useful report includes, where available:
 
-  Replay                  Partially mitigated     P2P nonce/timestamp cache;
-                                                  transaction nonce is
-                                                  undefined
+- affected repository commit, release or component;
+- affected file/function or endpoint;
+- supported operating system and toolchain;
+- exact reproduction steps;
+- expected and observed behavior;
+- impact and prerequisites;
+- a minimal proof of concept that does not expose real funds, user data or production systems;
+- suggested mitigation, if known.
 
-  Malformed messages      Partially mitigated     Pydantic, parsing and
-                                                  body-size controls;
-                                                  production wire grammar
-                                                  not frozen
+Do not include real private keys, seed phrases, access tokens or production secrets. Use disposable local test data.
 
-  Peer poisoning          Partially mitigated     Authenticated trust plus
-                                                  genesis/network checks;
-                                                  peer reputation is limited
+The project will use the reporting email above for initial coordination. No response-time or remediation-time guarantee is made by this policy.
 
-  Sybil                   Planned / partially     Key authentication is not
-                          mitigated               Sybil resistance
+## Triage process
 
-  Eclipse                 Planned                 No mature
-                                                  peer-selection/diversity
-                                                  strategy
+1. Acknowledge receipt when the report has been reviewed.
+2. Reproduce the issue on an isolated test environment where possible.
+3. Identify affected versions, attack prerequisites and potential impact.
+4. Assign a severity using the scale below.
+5. Develop and test a fix on a non-main branch.
+6. Review whether the fix changes consensus, transaction validity, monetary policy, address encoding, genesis or chain identity. Such changes require an explicit protocol decision and owner approval.
+7. Publish a security advisory or release note after a coordinated disclosure decision.
+8. Record unresolved risk and mitigation if a complete fix is not immediately possible.
 
-  DoS                     Partially mitigated     Body limits, bounded
-                                                  caches, rate limiting and
-                                                  backoff
+A finding is not considered confirmed until it has been reproduced or established by a deterministic regression test. Source-level suspicion must be labelled suspected.
 
-  Rate abuse              Partially mitigated     Process-local fixed-window
-                                                  limiter
+## Severity scale
 
-  SSRF                    Partially mitigated     Address validation; DNS
-                                                  rebinding remains possible
+| Severity | Criteria | Examples |
+|---|---|---|
+| Critical | Remote or low-complexity compromise of consensus safety, arbitrary issuance, unauthorized asset transfer at scale, persistent network split, or exposure of signing material with broad impact | Supply invariant bypass; consensus acceptance of invalid state |
+| High | Serious remote denial of service, reliable transaction theft, widespread node compromise, or a flaw that materially weakens consensus/network security | Remote peer crash across nodes; replay that enables unauthorized spending |
+| Medium | Limited-scope security boundary failure, request validation issue, resource exhaustion with meaningful constraints, or privilege misuse requiring prerequisites | API parser ambiguity; bounded but ineffective admission control |
+| Low | Narrow impact, high prerequisites, limited information disclosure or defense-in-depth weakness | Non-sensitive diagnostic leakage |
+| Informational | Hardening recommendation, documentation gap or non-exploitable observation | Missing operational runbook |
 
-  Address spoofing        Mitigated for signed    Public-key/address
-                          transfers               correspondence is verified
+Severity may be adjusted after reproduction and impact analysis. A scanner finding is not automatically a vulnerability.
 
-  Reorg abuse             Partially mitigated     Higher-work valid chain
-                                                  required; orphaned tx
-                                                  reinsertion absent
+## Handling and disclosure
 
-  Invalid difficulty      Mitigated               Expected difficulty is
-                                                  independently derived
+- Keep the report private while reproduction and remediation are underway.
+- Do not access, alter or attempt to recover real user funds.
+- Do not test against infrastructure without authorization.
+- Prefer a minimal regression test over a weaponized exploit.
+- Coordinate disclosure timing with the reporter where reasonably possible.
+- Publish affected versions, severity, impact, mitigation and fixed versions when disclosure is appropriate.
+- If a report is not reproducible, document what was tested and what additional evidence is needed.
 
-  Timestamp manipulation  Partially mitigated     Strictly increasing
-                                                  timestamps only
+## Secret handling
 
-  Serialization attacks   Partially mitigated     Deterministic JSON exists;
-                                                  canonical cross-language
-                                                  format not frozen
+- Never commit private keys, seed phrases, API tokens, TLS private keys, passwords or production credentials.
+- Use disposable local credentials in tests.
+- Keep node identity encryption keys outside the repository and configuration examples.
+- Rotate any credential that may have been exposed.
+- Do not place private key material in genesis files. Genesis allocation configuration must contain public addresses only.
 
-  Key compromise          Partially mitigated     Keys are separated by
-                                                  trust domain; secure key
-                                                  custody remains
-                                                  operational responsibility
-  --------------------------------------------------------------------------
+## Protocol-sensitive changes
 
-## Security boundaries
+Changes to consensus, monetary policy, transaction format, address format, genesis data, network identity or chain IDs are protocol changes. They must not be introduced as ordinary security maintenance. Prepare a design note with options, trade-offs, compatibility impact and test requirements, then wait for explicit owner approval.
 
-### Wallet keys
+## Current security posture
 
-Wallet private keys authorize value movement and must remain
-client-side.
+The repository contains Go unit/integration tests, Python reference tests, security scanners and local multi-node harnesses. Their exact status is recorded in [TEST_MATRIX.md](TEST_MATRIX.md). These results do not replace an independent protocol and infrastructure audit.
 
-Current status: `/wallet/create` does not return private-key material. This is
-acceptable only as an MVP development flow and must not be treated as
-production wallet custody architecture.
-
-### P2P keys
-
-P2P identity keys authenticate nodes and are separate from wallet keys.
-
-### Consensus
-
-P2P, API, CLI and mining code must not invent consensus rules.
-
-## Production security gates
-
-Before public testnet: - formal wire protocol; - secure transport; -
-peer diversity/reputation strategy; - fuzz/property testing; -
-crash/power-loss recovery; - dependency pinning; - CI security checks; -
-adversarial consensus tests; - key-management review; - external
-security review.
-
-## Phase 9.5 Security Status
-
-Phase 9.5 adds security hardening for deterministic state commitment, incremental state validation, checkpoint persistence/recovery, Merkle commitment semantics, and V2 chain-reorganization state handling.
-
-### Implemented and locally validated
-
-- Deterministic state snapshots and state-root computation.
-- Deterministic account ordering.
-- Bounded checkpoint decoding with account and field-size limits.
-- Complete checkpoint reads using `io.ReadFull`.
-- Rejection of truncated checkpoint data.
-- Rejection of duplicate account entries.
-- Deterministic state-root vectors.
-- Merkle Protocol V3 with domain-separated leaf/node/root hashing and leaf-count commitment.
-- Regression coverage for the historical duplicate-last Merkle ambiguity.
-- Incremental state validation and periodic checkpoints.
-- Checkpoint restart/recovery validation.
-- Legacy replay versus incremental-state differential validation.
-- V2 divergent-branch/reorganization state validation.
-- State-root verification following V2 reorganization.
-- Safer block → checkpoint → durable-tip persistence ordering.
-
-### Current verification environment
-
-The latest local validation environment is:
-
-- Go `1.27.0 android/arm64`
-- Python `3.14.6`
-
-Validated locally:
-
-- Go tests — **PASS**
-- Go vet — **PASS**
-- Go build — **PASS**
-- gofmt verification — **PASS**
-- Python tests — **262 passed, 1 warning**
-- Python compileall — **PASS**
-- pip-audit — **PASS / No known vulnerabilities**
-- Bandit — **PASS / No issues identified**
-
-The following security/validation gates remain **NOT EXECUTED** in the current environment:
-
-- staticcheck
-- govulncheck
-- gosec
-- Go race detector on Android/ARM64
-- fuzzing
-- empirical 400-block mining/difficulty regression
-- live Phase 9.5 runtime verification harness
-- external security audit
-
-### Security interpretation
-
-Phase 9.5 implementation and local validation do **not** establish production security approval.
-
-The state root is currently a deterministic **sidecar/checkpoint commitment** and is not an active state-root field in the block-header consensus format.
-
-Merkle Protocol V3 is implemented and tested, but activation and network compatibility remain deferred.
-
-Historical V1 mempool/reorganization semantics remain an open issue and are not claimed as resolved by Phase 9.5.
-
-The improved block/checkpoint/durable-tip ordering does not constitute crash/fault-injection proof of fully atomic persistence. That verification remains outstanding.
-
-Cosmos SDK / CometBFT remains a future architecture direction and is not implemented in the current repository.
-
-**Project security status: NOT PRODUCTION-READY / NOT MAINNET-READY.**
-
-
-## Security language policy
-
-Use: - Implemented - Mitigated - Partially mitigated - Planned -
-Undefined
-
-Do not use: - "perfectly secure" - "unhackable" - "fully decentralized"
-unless the architecture actually supports the claim - "BFT consensus"
-merely because nodes synchronize
-
-
-## Production transport and secret boundary
-
-The Go production-track API must use TLS whenever it listens on a non-loopback address. Bearer authentication is not considered a substitute for encrypted transport. P2P production transport now requires TLS 1.3 with mutual certificate verification on non-loopback listeners. Phase 9.3 adds a HELLO_FINISH authentication step and therefore requires the documented P2P protocol-minor amendment; old handshake peers are not assumed compatible.
-
-Node identity private keys are not stored as plaintext by the production-track identity loader. `SYJ_IDENTITY_ENCRYPTION_KEY` must be supplied out of band as 32 random bytes encoded as 64 hexadecimal characters. Do not put this value in source, genesis configuration, logs, CI output, or committed files.
+The project is not represented as mainnet-ready by this policy.
