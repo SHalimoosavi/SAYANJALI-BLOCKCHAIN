@@ -8,18 +8,18 @@ import (
 
 func TestMutationRateLimiterStateIsBoundedAndEvictsLeastRecentlyUsed(t *testing.T) {
 	a := &API{rates: make(map[string]*rateLimitEntry), maxRateEntries: 2}
-	request := func(port int) {
+	request := func(lastOctet int) {
 		t.Helper()
 		r := httptest.NewRequest("POST", "http://node.invalid/mine", nil)
-		r.RemoteAddr = fmt.Sprintf("192.0.2.%d:3030", port)
+		r.RemoteAddr = fmt.Sprintf("192.0.2.%d:3030", lastOctet)
 		if !a.allowMutationRequest(r) {
 			t.Fatalf("request from port %d unexpectedly rate limited", port)
 		}
 	}
+	request(1)
+	request(2)
 	request(1001)
-	request(1002)
-	request(1001)
-	request(1003)
+	request(3)
 	if len(a.rates) != 2 {
 		t.Fatalf("rate limiter retained %d entries, want 2", len(a.rates))
 	}
@@ -37,11 +37,11 @@ func TestMutationRateLimiterStateIsBoundedAndEvictsLeastRecentlyUsed(t *testing.
 func TestMutationRateLimiterNeverExceedsConfiguredCapacity(t *testing.T) {
 	const capacity = 4
 	a := &API{rates: make(map[string]*rateLimitEntry), maxRateEntries: capacity}
-	for port := 1; port < 201; port++ {
+	for lastOctet := 1; lastOctet <= 200; lastOctet++ {
 		r := httptest.NewRequest("POST", "http://node.invalid/mine", nil)
-		r.RemoteAddr = fmt.Sprintf("192.0.2.%d:3030", port)
+		r.RemoteAddr = fmt.Sprintf("198.51.100.%d:3030", lastOctet)
 		if !a.allowMutationRequest(r) {
-			t.Fatalf("request %d unexpectedly rate limited", port)
+			t.Fatalf("request %d unexpectedly rate limited", lastOctet)
 		}
 		if got := len(a.rates); got > capacity {
 			t.Fatalf("rate limiter state grew to %d entries, capacity %d", got, capacity)
