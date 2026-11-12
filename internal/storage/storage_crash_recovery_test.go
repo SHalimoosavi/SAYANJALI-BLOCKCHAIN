@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/block"
@@ -56,7 +57,7 @@ func TestJournalCrashRecoveryAtEveryByteBoundary(t *testing.T) {
 	}
 
 	for cut := 0; cut <= len(journal); cut++ {
-		t.Run(string(rune(cut)), func(t *testing.T) {
+		t.Run(strconv.Itoa(cut), func(t *testing.T) {
 			dir := t.TempDir()
 			if err := os.WriteFile(filepath.Join(dir, "ledger.journal"), journal[:cut], 0600); err != nil {
 				t.Fatal(err)
