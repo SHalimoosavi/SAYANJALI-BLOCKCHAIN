@@ -75,3 +75,17 @@ A later Go 1.27.1 PR validation run failed at `govulncheck ./...`:
 - Fixed toolchain versions reported include Go 1.27.2, 1.27.3 and 1.27.4; GO-2026-6859 requires Go 1.27.4.
 
 The earlier 2026-10-02 clean scan is historical evidence, not the current security status. PR #26 proposes moving the pinned toolchain and exact CI checks to Go 1.27.4. The upgrade is not considered verified until its CI run passes.
+
+## Go coverage result
+
+The first exact Go 1.27.1 race+coverage run completed successfully:
+
+- [Audit Go Race and Coverage run 43134996150](https://github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/actions/runs/43134996150)
+- [Coverage artifact](https://github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/actions/runs/43134996150/artifacts/13906812432)
+- Exact runtime: `go version go1.27.1 linux/amd64`
+- `go test -race -coverprofile=coverage.out ./...`: PASS
+- Aggregate statement coverage: **52.6%**
+
+Notable package coverage from that run: chain 64.3%, node 57.9%, P2P 75.4%, P2P node 62.3%, security 75.6%, state commitment 97.0%, storage 59.6%, tokenomics 60.2%, transaction 31.2%, consensus 15.8%, block 38.9%.
+
+Because the subsequent vulnerability scan found Go 1.27.1 standard-library vulnerabilities, the workflow in this PR is updated to Go 1.27.4 for future runs. The Go 1.27.1 result above remains the exact requested baseline measurement.
