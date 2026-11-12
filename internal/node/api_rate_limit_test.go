@@ -11,7 +11,7 @@ func TestMutationRateLimiterStateIsBoundedAndEvictsLeastRecentlyUsed(t *testing.
 	request := func(port int) {
 		t.Helper()
 		r := httptest.NewRequest("POST", "http://node.invalid/mine", nil)
-		r.RemoteAddr = fmt.Sprintf("127.0.0.1:%d", port)
+		r.RemoteAddr = fmt.Sprintf("192.0.2.%d:3030", port)
 		if !a.allowMutationRequest(r) {
 			t.Fatalf("request from port %d unexpectedly rate limited", port)
 		}
@@ -23,13 +23,13 @@ func TestMutationRateLimiterStateIsBoundedAndEvictsLeastRecentlyUsed(t *testing.
 	if len(a.rates) != 2 {
 		t.Fatalf("rate limiter retained %d entries, want 2", len(a.rates))
 	}
-	if _, ok := a.rates["127.0.0.1:1001"]; !ok {
+	if _, ok := a.rates["192.0.2.1"]; !ok {
 		t.Fatal("recently used entry A was evicted")
 	}
-	if _, ok := a.rates["127.0.0.1:1002"]; ok {
+	if _, ok := a.rates["192.0.2.2"]; ok {
 		t.Fatal("least-recently-used entry B was not evicted")
 	}
-	if _, ok := a.rates["127.0.0.1:1003"]; !ok {
+	if _, ok := a.rates["192.0.2.3"]; !ok {
 		t.Fatal("new entry C was not retained")
 	}
 }
@@ -37,9 +37,9 @@ func TestMutationRateLimiterStateIsBoundedAndEvictsLeastRecentlyUsed(t *testing.
 func TestMutationRateLimiterNeverExceedsConfiguredCapacity(t *testing.T) {
 	const capacity = 4
 	a := &API{rates: make(map[string]*rateLimitEntry), maxRateEntries: capacity}
-	for port := 2000; port < 2200; port++ {
+	for port := 1; port < 201; port++ {
 		r := httptest.NewRequest("POST", "http://node.invalid/mine", nil)
-		r.RemoteAddr = fmt.Sprintf("127.0.0.1:%d", port)
+		r.RemoteAddr = fmt.Sprintf("192.0.2.%d:3030", port)
 		if !a.allowMutationRequest(r) {
 			t.Fatalf("request %d unexpectedly rate limited", port)
 		}
