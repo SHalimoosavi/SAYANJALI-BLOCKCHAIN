@@ -64,3 +64,14 @@ The audit coverage workflow runs Go 1.27.1 and executes:
 - upload the coverage profile as a workflow artifact.
 
 Coverage remains NOT PRODUCED for the baseline commit until this workflow completes successfully on a review PR.
+
+## Subsequent Go vulnerability recheck (2026-11-12)
+
+A later Go 1.27.1 PR validation run failed at `govulncheck ./...`:
+
+- [Production Validation run 43134361620](https://github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/actions/runs/43134361620)
+- Go job: `130905980200`
+- Result: 11 Go standard-library vulnerability findings, plus 2 package and 2 module findings for which the scanner did not identify a call path from this code.
+- Fixed toolchain versions reported include Go 1.27.2, 1.27.3 and 1.27.4; GO-2026-6859 requires Go 1.27.4.
+
+The earlier 2026-10-02 clean scan is historical evidence, not the current security status. PR #26 proposes moving the pinned toolchain and exact CI checks to Go 1.27.4. The upgrade is not considered verified until its CI run passes.
