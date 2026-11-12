@@ -98,7 +98,7 @@ The isolated Phase 7 private-testnet fixture is `configs/genesis/phase7-private-
 ![Python](https://img.shields.io/badge/python-3.13%2B-blue)
 ![FastAPI](https://img.shields.io/badge/framework-FastAPI-009688)
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Tests](https://img.shields.io/badge/tests-195%20passing-brightgreen)
+[![Production Validation](https://github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/actions/workflows/production-validation.yml/badge.svg?branch=main)](https://github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/actions/workflows/production-validation.yml)
 ![Version](https://img.shields.io/badge/version-v0.3.1--mvp-orange)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS%20%7C%20Android-lightgrey)
 ![GitHub Stars](https://img.shields.io/github/stars/sayanjali-nexus/sayanjali-blockchain?style=social)
@@ -330,7 +330,7 @@ the single source of runtime parameters read by every other package.
 | Data Validation | Pydantic |
 | Persistence | SQLAlchemy Core, SQLite (PostgreSQL-compatible) |
 | CLI Framework | Typer, Rich |
-| Cryptography | `cryptography`, `ecdsa` (SECP256k1) |
+| Cryptography | `cryptography` (Python reference wallet); Go secp256k1 implementation |
 | Testing | pytest, FastAPI `TestClient` |
 | Configuration | Environment-variable-driven dataclasses |
 
@@ -650,7 +650,7 @@ pytest --cov=blockchain --cov=api --cov-report=term-missing
 ## Security
 
 **Cryptography.** Wallets use ECDSA on the SECP256k1 curve, the same curve
-used by Bitcoin and Ethereum, via the `ecdsa` and `cryptography` libraries.
+implemented with the maintained `cryptography` package in the Python reference wallet and the pinned Go secp256k1 library in the Go node.
 Addresses are one-way SHA-256 derivations of the public key.
 
 **Hashing.** Block and transaction integrity is enforced with SHA-256.
@@ -717,7 +717,7 @@ ahead of any mainnet deployment.
 Vulnerabilities should be reported privately rather than through public
 issues, given the project's early stage.
 
-## Phase 10.1 Current Verification Status
+## Phase 10.1 Historical Verification Status
 
 > **Engineering status:** Phase 10.1 400-block consensus/difficulty regression harness is implemented. An isolated dependency-constrained run accepted 400/400 blocks, crossed 40 retarget boundaries, passed restart/reload validation, and reproduced all deterministic consensus fields across an independent second run.
 >
@@ -737,7 +737,7 @@ The authoritative Phase 10 baseline is `ea26fe1db68f2e45ad7051cbedae655de36b0ca6
 
 ### Current environment limitation
 
-The repository requires Go `1.27` / toolchain `go1.27.1`, while the current execution environment provides Go `1.23.2` and cannot download the required toolchain or pinned secp256k1 module. Therefore the official production Go build/test/vet/race gates are **NOT EXECUTED** here. The empirical 400-block run used a temporary disposable crypto stub only to execute the real consensus/chain/state path; that stub is not part of the delivery archive and no cryptographic validation claim is inferred.
+The historical Phase 10.1 local environment could not run the required toolchain. The current baseline's GitHub Actions evidence is recorded separately in [docs/TEST_MATRIX.md](docs/TEST_MATRIX.md). The empirical 400-block run used a temporary disposable crypto stub only to execute the real consensus/chain/state path; that stub is not part of the delivery archive and no cryptographic validation claim is inferred.
 
 See `PHASE10_1_VALIDATION_REPORT.md`, `PHASE10_PROVENANCE.md`, and `docs/consensus/phase10-400-block-regression.md`.
 
