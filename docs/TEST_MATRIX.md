@@ -102,3 +102,13 @@ On Go 1.27.4, the following all passed: `go test ./...`, `go vet ./...`, `go bui
 The gosec directory-permission warning was addressed with a narrowly scoped, justified G302 annotation: the identity directory is deliberately owner-only mode 0700; directories require owner execute permission, so 0600 is not a valid secure directory mode.
 
 The Go 1.27.4 update is verified on its PR branch but is not yet merged into main. Other audit PRs based on main may continue to show a govulncheck failure until this toolchain PR is merged and their merge refs use the patched toolchain.
+
+A second run using the updated Go 1.27.4 workflow also passed:
+
+- [Go 1.27.4 race+coverage run 43135467742](https://github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/actions/runs/43135467742)
+- [Coverage artifact](https://github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/actions/runs/43135467742/artifacts/13906434142)
+- Exact runtime: `go version go1.27.4 linux/amd64`
+- Race+coverage: PASS
+- Aggregate statement coverage: **51.6%**
+
+The two successful runs reported 52.6% (Go 1.27.1) and 51.6% (Go 1.27.4). The cause of the difference has not been isolated; do not treat coverage as a deterministic release metric until this variance is investigated. In the Go 1.27.4 run, package coverage included: chain 63.3%, consensus 17.0%, node 57.6%, transaction 30.3%, tokenomics 60.2%, storage 59.6%, state commitment 94.4%, and P2P 75.4%. Several packages including wallet, protocol and genesisconfig reported 0.0% statement coverage.
