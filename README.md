@@ -796,7 +796,7 @@ Results:
 - `go vet ./...` — **PASS**
 - `go build ./...` — **PASS**
 - `gofmt` verification — **PASS**
-- `pytest -q` — **262 passed, 1 warning**
+- Historical local Python run: **262 passed, 1 warning**; current baseline CI: **262 passed, 2 warnings**. See [docs/TEST_MATRIX.md](docs/TEST_MATRIX.md).
 - `compileall` — **PASS**
 - `pip-audit -r requirements.lock.txt` — **PASS / No known vulnerabilities**
 - Bandit — **PASS / No issues identified**
