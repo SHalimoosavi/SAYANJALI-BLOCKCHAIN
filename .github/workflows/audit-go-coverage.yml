@@ -12,16 +12,16 @@ permissions:
 
 jobs:
   go-race-coverage:
-    name: Go 1.27.1 race and coverage
+    name: Go 1.27.4 race and coverage
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Go 1.27.1
+      - name: Set up Go 1.27.4
         uses: actions/setup-go@v5
         with:
-          go-version: '1.27.1'
+          go-version: '1.27.4'
           check-latest: true
           cache: true
 
@@ -30,7 +30,7 @@ jobs:
         run: |
           actual="$(go version)"
           echo "$actual"
-          test "$actual" = "go version go1.27.1 linux/amd64"
+          test "$actual" = "go version go1.27.4 linux/amd64"
 
       - name: Run race tests with coverage
         run: go test -race -coverprofile=coverage.out ./...
