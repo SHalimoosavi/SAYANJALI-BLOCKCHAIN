@@ -13,7 +13,7 @@ func TestMutationRateLimiterStateIsBoundedAndEvictsLeastRecentlyUsed(t *testing.
 		r := httptest.NewRequest("POST", "http://node.invalid/mine", nil)
 		r.RemoteAddr = fmt.Sprintf("192.0.2.%d:3030", lastOctet)
 		if !a.allowMutationRequest(r) {
-			t.Fatalf("request from port %d unexpectedly rate limited", port)
+			t.Fatalf("request from address suffix %d unexpectedly rate limited", lastOctet)
 		}
 	}
 	request(1)
