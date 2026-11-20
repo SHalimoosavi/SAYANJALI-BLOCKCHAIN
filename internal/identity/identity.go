@@ -37,7 +37,7 @@ func LoadOrCreate(dir string) (*Identity, bool, error) {
 	if err := os.MkdirAll(dir, identityDirPerm); err != nil {
 		return nil, false, err
 	}
-	if err := os.Chmod(dir, identityDirPerm); err != nil {
+	if err := os.Chmod(dir, identityDirPerm); err != nil { // #nosec G302 -- directories require owner execute permission; 0700 prevents group/world access.
 		return nil, false, fmt.Errorf("protect identity directory: %w", err)
 	}
 	path := filepath.Join(dir, "identity.json")
