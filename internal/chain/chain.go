@@ -23,9 +23,18 @@ import (
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/pkg/protocol"
 )
 
+type chainStore interface {
+	AllBlocks() ([]*block.Block, error)
+	SaveBlock(*block.Block) error
+	SetTip(string) error
+	Tip() string
+	SaveStateCheckpoint(string, []byte) error
+	GetStateCheckpoint(string) ([]byte, bool)
+}
+
 type Chain struct {
 	mu              sync.RWMutex
-	store           *storage.Store
+	store           chainStore
 	blocks          map[string]*block.Block
 	activeTip       string
 	active          []*block.Block
@@ -102,7 +111,7 @@ func openWithProtocol(store *storage.Store, genesisState *tokenomics.GenesisStat
 	return openWithProtocolAndClock(store, genesisState, protocolVersion, networkID, networkName, clock.RealClock{})
 }
 
-func openWithProtocolAndClock(store *storage.Store, genesisState *tokenomics.GenesisState, protocolVersion uint8, networkID, networkName string, clk clock.Clock) (*Chain, error) {
+func openWithProtocolAndClock(store chainStore, genesisState *tokenomics.GenesisState, protocolVersion uint8, networkID, networkName string, clk clock.Clock) (*Chain, error) {
 	if clk == nil {
 		clk = clock.RealClock{}
 	}
