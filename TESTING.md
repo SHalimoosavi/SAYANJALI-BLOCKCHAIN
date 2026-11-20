@@ -6,11 +6,8 @@
 pytest -v
 ```
 
-231 tests currently cover wallets, transactions, blocks, mining/consensus
-(including the Phase 7 ratio-based difficulty retarget and Phase 1's
-independent difficulty/coinbase/mempool enforcement), chain validation,
-P2P networking and authentication, and the full REST API surface (via
-FastAPI's TestClient).
+The authoritative current test matrix is maintained in [docs/TEST_MATRIX.md](docs/TEST_MATRIX.md). Historical test counts from earlier snapshots are not current results.
+
 
 ## Test isolation
 
@@ -80,11 +77,10 @@ python -m cli.main status
 Then start the API and hit `http://127.0.0.1:8000/docs` to exercise
 endpoints interactively via Swagger UI.
 
-## Phase 2 monetary acceptance tests
+## Historical Python test counts
 
-`tests/test_native_asset.py` covers base-unit precision, conversion, malformed amounts, maximum-supply constants, and transaction round-trips. `tests/test_supply_invariant.py` covers cumulative issuance, excessive coinbase rejection, unfunded transfers, and deterministic reward capping at the remaining supply.
+Earlier counts of 244 and other totals refer to prior snapshots and temporary test environments. They are not current baseline results. See [docs/TEST_MATRIX.md](docs/TEST_MATRIX.md) for the latest verified CI evidence.
 
-The full suite for this development checkpoint completed with 244 passing tests in an isolated test environment using the project's interfaces. The runtime used for this audit did not have the declared `ecdsa` package available, so the execution used a temporary test-only compatibility shim; the project source and `requirements.txt` were not changed to add that shim. A native Termux run with the declared dependencies remains the authoritative release verification.
 
 ## Phase 3 testnet acceptance
 
@@ -93,6 +89,9 @@ Phase 3 adds focused lifecycle/peer-health/protocol tests and a real three-proce
 The local testnet uses isolated SQLite databases and independent HTTP ports, so it does not modify a developer's chain database.
 
 ## Go production-track validation
+
+The exact Go 1.27.1 CI result, race status and coverage status are recorded in [docs/TEST_MATRIX.md](docs/TEST_MATRIX.md). The separate audit workflow generates a race-enabled coverage profile.
+
 
 The production-track implementation is the Go node under `cmd/syjd` and `internal/`. Run:
 
