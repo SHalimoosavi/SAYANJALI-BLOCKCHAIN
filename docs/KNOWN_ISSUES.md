@@ -56,9 +56,9 @@ Do not merge a Go 1.27.1-based release after this finding without either upgradi
 
 - **ID:** CHAIN-ACCEPT-001
 - **Severity:** High
-- **Status on baseline main:** Confirmed; remediation proposed in PR #29
+- **Status:** Confirmed on baseline main; fix included in PR #29 and not yet merged to main
 - **Location:** `internal/chain/chain.go`, `Chain.Accept` and startup chain reconstruction; `internal/storage/storage.go`, journal append handling
 - **Reproduction:** when `SaveBlock` succeeds and the subsequent `SetTip` fails, the block remains in durable storage and in the in-memory block map. A retry is then classified as a duplicate before the promotion path can run. On restart, the loader trusts the stored tip record and does not reconcile it against higher-work stored chains.
 - **Impact:** the node can retain an older active tip even though a higher-work block is already persisted. A failed partial journal append can also obstruct a subsequent storage retry unless the incomplete record is rolled back.
 - **Proposed remediation:** allow retry of a persisted candidate whose promotion is pending, reconcile stored chains against the durable tip using the existing strict-greater-work rule, retain deterministic journal insertion order for equal-work selection, and roll back incomplete journal records after append failures.
-- **Verification status:** fault-injection regression tests in PR #29 reproduce retry, restart-recovery and reorganisation failures on the unfixed implementation. Fix verification remains subject to the PR's Go 1.27.4 CI results.
+- **Verification status:** fault-injection regression tests reproduce retry, restart-recovery and reorganisation failures on the unfixed implementation. The PR #29 head passed Go 1.27.4 Production Validation, Build 1 C-1 Verification, and Go race/coverage workflows; these results apply to the PR branch, not to main.
