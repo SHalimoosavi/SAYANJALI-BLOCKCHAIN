@@ -45,15 +45,15 @@ type Chain struct {
 	miningIssued      uint64
 	genesisState      *tokenomics.GenesisState
 	confirmedTx       map[string]struct{}
-	protocolVersion uint8
-	networkID       string
-	networkName     string
-	clock           clock.Clock
-	nonces          map[string]uint64
-	stateSnapshots  map[string]*statecommitment.Snapshot
+	protocolVersion   uint8
+	networkID         string
+	networkName       string
+	clock             clock.Clock
+	nonces            map[string]uint64
+	stateSnapshots    map[string]*statecommitment.Snapshot
 	pendingPromotions map[string]struct{}
-	stateRoot       string
-	reorgCandidates []transaction.Transaction
+	stateRoot         string
+	reorgCandidates   []transaction.Transaction
 }
 
 func Open(store *storage.Store) (*Chain, error) {
