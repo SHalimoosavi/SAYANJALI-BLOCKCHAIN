@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-required_go='go1.27.1'
+required_go='go1.27.4'
 actual_go="$(GOTOOLCHAIN=local go version | awk '{print $3}')"
 printf 'go version: %s\n' "$(GOTOOLCHAIN=local go version)"
 if [[ "$actual_go" != "$required_go" ]]; then
