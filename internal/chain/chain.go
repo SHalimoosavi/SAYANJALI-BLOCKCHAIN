@@ -214,18 +214,18 @@ func openWithProtocolAndClock(store chainStore, genesisState *tokenomics.Genesis
 			bestTip = storedChain[len(storedChain)-1].Hash
 		}
 	}
-	if bestTip != tip {
-		if err := store.SetTip(bestTip); err != nil {
-			return nil, fmt.Errorf("repair durable best tip: %w", err)
-		}
-	}
 	c.activeTip = bestTip
 	c.active = bestChain
 	if err := c.replayState(bestChain); err != nil {
 		return nil, err
 	}
-	if err := c.initializeIncrementalState(candidate); err != nil {
+	if err := c.initializeIncrementalState(bestChain); err != nil {
 		return nil, err
+	}
+	if bestTip != tip {
+		if err := store.SetTip(bestTip); err != nil {
+			return nil, fmt.Errorf("repair durable best tip: %w", err)
+		}
 	}
 	return c, nil
 }
