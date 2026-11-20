@@ -34,17 +34,17 @@ type chainStore interface {
 }
 
 type Chain struct {
-	mu              sync.RWMutex
-	store           chainStore
-	blocks          map[string]*block.Block
-	activeTip       string
-	active          []*block.Block
-	balances        state.Balances
-	supply          uint64
-	genesisSupply   uint64
-	miningIssued    uint64
-	genesisState    *tokenomics.GenesisState
-	confirmedTx     map[string]struct{}
+	mu                sync.RWMutex
+	store             chainStore
+	blocks            map[string]*block.Block
+	activeTip         string
+	active            []*block.Block
+	balances          state.Balances
+	supply            uint64
+	genesisSupply     uint64
+	miningIssued      uint64
+	genesisState      *tokenomics.GenesisState
+	confirmedTx       map[string]struct{}
 	protocolVersion uint8
 	networkID       string
 	networkName     string
