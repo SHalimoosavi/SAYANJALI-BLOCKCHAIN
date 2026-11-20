@@ -3,6 +3,7 @@ package node
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -175,7 +176,7 @@ func (a *API) transactions(w http.ResponseWriter, r *http.Request) {
 		}
 		var tx transaction.Transaction
 		r.Body = http.MaxBytesReader(w, r.Body, 64*1024)
-		if e := json.NewDecoder(r.Body).Decode(&tx); e != nil {
+		if e := decodeStrictJSON(r.Body, &tx); e != nil {
 			writeJSON(w, 400, map[string]string{"error": "invalid transaction"})
 			return
 		}
@@ -258,6 +259,22 @@ func (a *API) shutdown(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 202, map[string]any{"stopping": true})
 	go a.n.Stop()
 }
+func decodeStrictJSON(r io.Reader, dst any) error {
+	decoder := json.NewDecoder(r)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(dst); err != nil {
+		return err
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return errors.New("request body must contain exactly one JSON value")
+		}
+		return err
+	}
+	return nil
+}
+
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
