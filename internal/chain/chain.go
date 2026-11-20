@@ -118,17 +118,17 @@ func openWithProtocolAndClock(store chainStore, genesisState *tokenomics.Genesis
 		clk = clock.RealClock{}
 	}
 	c := &Chain{
-		store:           store,
-		blocks:          make(map[string]*block.Block),
-		balances:        make(state.Balances),
-		confirmedTx:     make(map[string]struct{}),
-		genesisState:    genesisState,
-		protocolVersion: protocolVersion,
-		networkID:       networkID,
-		networkName:     networkName,
-		clock:           clk,
-		nonces:          make(map[string]uint64),
-		stateSnapshots:  make(map[string]*statecommitment.Snapshot),
+		store:             store,
+		blocks:            make(map[string]*block.Block),
+		balances:          make(state.Balances),
+		confirmedTx:       make(map[string]struct{}),
+		genesisState:      genesisState,
+		protocolVersion:   protocolVersion,
+		networkID:         networkID,
+		networkName:       networkName,
+		clock:             clk,
+		nonces:            make(map[string]uint64),
+		stateSnapshots:    make(map[string]*statecommitment.Snapshot),
 		pendingPromotions: make(map[string]struct{}),
 	}
 	bs, err := store.AllBlocks()
