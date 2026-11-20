@@ -52,11 +52,13 @@ func newAcceptFaultChain(t *testing.T, dir string, failSetTip int) (*Chain, *acc
 	if err != nil {
 		t.Fatal(err)
 	}
-	fs := &acceptFaultStore{Store: raw, failSetTip: failSetTip}
+	fs := &acceptFaultStore{Store: raw}
 	c, err := openWithProtocolAndClock(fs, &gs, 2, network, wireName, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Arm the one-shot failure only after genesis has been initialized.
+	fs.failSetTip = failSetTip
 	return c, fs, gs, key, network
 }
 
