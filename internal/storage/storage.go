@@ -29,6 +29,7 @@ type Store struct {
 	dir         string
 	file        *os.File
 	blocks      map[string][]byte
+	blockOrder  []string
 	tip         string
 	checkpoints map[string][]byte
 }
@@ -123,6 +124,9 @@ func (s *Store) replay() error {
 			if b.Hash == "" {
 				return fmt.Errorf("database corruption at offset %d: empty block hash", offset)
 			}
+			if _, exists := s.blocks[b.Hash]; !exists {
+				s.blockOrder = append(s.blockOrder, b.Hash)
+			}
 			s.blocks[b.Hash] = append([]byte(nil), payload...)
 		case recordTip:
 			s.tip = string(payload)
@@ -157,19 +161,42 @@ func (s *Store) appendRecord(typ byte, payload []byte) error {
 	if len(payload) > maxRecord || uint64(len(payload)) > uint64(^uint32(0)) {
 		return errors.New("record too large")
 	}
+	start, err := s.file.Seek(0, io.SeekEnd)
+	if err != nil {
+		return err
+	}
+	rollback := func(cause error) error {
+		if truncateErr := s.file.Truncate(start); truncateErr != nil {
+			return errors.Join(cause, fmt.Errorf("rollback incomplete journal record: %w", truncateErr))
+		}
+		if syncErr := s.file.Sync(); syncErr != nil {
+			return errors.Join(cause, fmt.Errorf("sync journal rollback: %w", syncErr))
+		}
+		if _, seekErr := s.file.Seek(0, io.SeekEnd); seekErr != nil {
+			return errors.Join(cause, fmt.Errorf("seek after journal rollback: %w", seekErr))
+		}
+		return cause
+	}
 	var hdr [19]byte
 	copy(hdr[:8], magic)
 	binary.BigEndian.PutUint16(hdr[8:10], version)
 	hdr[10] = typ
 	binary.BigEndian.PutUint32(hdr[11:15], uint32(len(payload))) // #nosec G115 -- payload length is explicitly bounded to uint32.
 	binary.BigEndian.PutUint32(hdr[15:19], crc32.ChecksumIEEE(payload))
-	if _, err := s.file.Write(hdr[:]); err != nil {
-		return err
+	if n, writeErr := s.file.Write(hdr[:]); writeErr != nil {
+		return rollback(writeErr)
+	} else if n != len(hdr) {
+		return rollback(io.ErrShortWrite)
 	}
-	if _, err := s.file.Write(payload); err != nil {
-		return err
+	if n, writeErr := s.file.Write(payload); writeErr != nil {
+		return rollback(writeErr)
+	} else if n != len(payload) {
+		return rollback(io.ErrShortWrite)
 	}
-	return s.file.Sync()
+	if err := s.file.Sync(); err != nil {
+		return rollback(err)
+	}
+	return nil
 }
 func (s *Store) SaveBlock(b *block.Block) error {
 	s.mu.Lock()
@@ -180,6 +207,9 @@ func (s *Store) SaveBlock(b *block.Block) error {
 	}
 	if err = s.appendRecord(recordBlock, payload); err != nil {
 		return err
+	}
+	if _, exists := s.blocks[b.Hash]; !exists {
+		s.blockOrder = append(s.blockOrder, b.Hash)
 	}
 	s.blocks[b.Hash] = append([]byte(nil), payload...)
 	return nil
@@ -212,7 +242,11 @@ func (s *Store) AllBlocks() ([]*block.Block, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := make([]*block.Block, 0, len(s.blocks))
-	for _, data := range s.blocks {
+	for _, hash := range s.blockOrder {
+		data, ok := s.blocks[hash]
+		if !ok {
+			continue
+		}
 		b, err := codec.DecodeBlock(data)
 		if err != nil {
 			return nil, err

@@ -51,3 +51,14 @@ Do not merge a Go 1.27.1-based release after this finding without either upgradi
 - **Reproduction:** `genesisconfig.Validate` rejects duplicate recipient addresses, but the node loads `tokenomics.GenesisState` directly and its `ValidateStructure` checks categories/amounts without checking recipient uniqueness. Characterization test in PR #21: `internal/tokenomics/genesisstate_duplicate_recipient_audit_test.go`, passed in Build 1 C-1 Verification run 43136118051.
 - **Impact:** a GenesisState can aggregate multiple allocation categories to one address through the node loading path, despite the production config validator's unique-recipient rule.
 - **Proposed remediation:** owner decision note in PR #21 documents the options. Do not change genesis acceptance rules or existing genesis data without explicit approval.
+
+## Persisted block can remain unpromoted after tip-write failure
+
+- **ID:** CHAIN-ACCEPT-001
+- **Severity:** High
+- **Status on baseline main:** Confirmed; remediation proposed in PR #29
+- **Location:** `internal/chain/chain.go`, `Chain.Accept` and startup chain reconstruction; `internal/storage/storage.go`, journal append handling
+- **Reproduction:** when `SaveBlock` succeeds and the subsequent `SetTip` fails, the block remains in durable storage and in the in-memory block map. A retry is then classified as a duplicate before the promotion path can run. On restart, the loader trusts the stored tip record and does not reconcile it against higher-work stored chains.
+- **Impact:** the node can retain an older active tip even though a higher-work block is already persisted. A failed partial journal append can also obstruct a subsequent storage retry unless the incomplete record is rolled back.
+- **Proposed remediation:** allow retry of a persisted candidate whose promotion is pending, reconcile stored chains against the durable tip using the existing strict-greater-work rule, retain deterministic journal insertion order for equal-work selection, and roll back incomplete journal records after append failures.
+- **Verification status:** fault-injection regression tests in PR #29 reproduce retry, restart-recovery and reorganisation failures on the unfixed implementation. Fix verification remains subject to the PR's Go 1.27.4 CI results.

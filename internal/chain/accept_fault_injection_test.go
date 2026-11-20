@@ -258,3 +258,34 @@ func TestAcceptRetriesFailedHigherWorkReorganisation(t *testing.T) {
 		t.Fatal("retry did not complete reorganisation with consistent state")
 	}
 }
+
+func TestOpenPreservesDurableTipWhenStoredForkHasEqualWork(t *testing.T) {
+	dir := t.TempDir()
+	c, fs, gs, key, network := newAcceptFaultChain(t, dir, 0)
+	genesis := c.Tip()
+	a1 := mineAcceptFaultBlock(t, genesis, key, network, 0, 31)
+	requireBestAccept(t, c, a1)
+	b1 := mineAcceptFaultBlock(t, genesis, key, network, 0, 32)
+	if ok, reason, err := c.Accept(b1); err != nil || !ok || reason != "fork" {
+		t.Fatalf("equal-work fork Accept() = (%v, %q, %v), want fork", ok, reason, err)
+	}
+	if err := fs.Store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := storage.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	wireName, err := networkid.WireNetworkName(network)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := OpenV2WithGenesisState(reopened, gs, network, wireName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recovered.TipHash() != a1.Hash {
+		t.Fatalf("equal-work startup reconciliation changed tip to %s, want durable tip %s", recovered.TipHash(), a1.Hash)
+	}
+}
