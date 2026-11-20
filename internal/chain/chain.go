@@ -30,6 +30,7 @@ type chainStore interface {
 	Tip() string
 	SaveStateCheckpoint(string, []byte) error
 	GetStateCheckpoint(string) ([]byte, bool)
+	Close() error
 }
 
 type Chain struct {
