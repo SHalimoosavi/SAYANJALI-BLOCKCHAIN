@@ -139,7 +139,6 @@ func TestAppendRollbackPreservesEarlierFsyncedRecord(t *testing.T) {
 	}
 }
 
-
 func TestAppendRollbackSyncFailureCanRecoverOnLaterAppendAndReplay(t *testing.T) {
 	dir := t.TempDir()
 	store, err := Open(dir)
