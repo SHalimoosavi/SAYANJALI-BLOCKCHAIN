@@ -165,6 +165,9 @@ func TestAppendRollbackSyncFailurePoisonsStoreUntilReopen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := store.SaveBlock(genesis); err != nil {
+		t.Fatal(err)
+	}
 
 	fault := &faultJournalFile{
 		journalFile:      store.file,
@@ -172,10 +175,11 @@ func TestAppendRollbackSyncFailurePoisonsStoreUntilReopen(t *testing.T) {
 		failSync:         true,
 		skipSync:         true,
 	}
+	fault.writes = 0
 	store.file = fault
-	err = store.SaveBlock(genesis)
+	err = store.SetTip(genesis.Hash)
 	if !errors.Is(err, errInjectedPayloadWrite) || !errors.Is(err, errInjectedSync) {
-		t.Fatalf("SaveBlock error=%v, want append and rollback-sync failures", err)
+		t.Fatalf("SetTip error=%v, want append and rollback-sync failures", err)
 	}
 
 	// Truncate succeeded, but its durability sync failed. The live Store
