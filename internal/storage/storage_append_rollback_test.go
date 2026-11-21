@@ -19,6 +19,7 @@ type faultJournalFile struct {
 	failPayloadWrite bool
 	failTruncate     bool
 	failSync         bool
+	skipSync         bool
 	writes           int
 }
 
@@ -43,6 +44,9 @@ func (f *faultJournalFile) Sync() error {
 		f.failSync = false
 		return errInjectedSync
 	}
+	if f.skipSync {
+		return nil
+	}
 	return f.journalFile.Sync()
 }
 
@@ -57,7 +61,7 @@ func TestAppendRollbackAfterHeaderAllowsLaterAppendAndReplay(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	fault := &faultJournalFile{journalFile: store.file, failPayloadWrite: true}
+	fault := &faultJournalFile{journalFile: store.file, failPayloadWrite: true, skipSync: true}
 	store.file = fault
 	if err := store.SaveBlock(genesis); !errors.Is(err, errInjectedPayloadWrite) {
 		t.Fatalf("SaveBlock error=%v, want injected payload failure", err)
@@ -154,6 +158,7 @@ func TestAppendRollbackSyncFailureCanRecoverOnLaterAppendAndReplay(t *testing.T)
 		journalFile:      store.file,
 		failPayloadWrite: true,
 		failSync:         true,
+		skipSync:         true,
 	}
 	store.file = fault
 	err = store.SaveBlock(genesis)
@@ -204,6 +209,7 @@ func TestAppendRollbackFailureIsReportedAndReplayRejectsCorruptTail(t *testing.T
 		journalFile:      store.file,
 		failPayloadWrite: true,
 		failTruncate:     true,
+		skipSync:         true,
 	}
 	store.file = fault
 	err = store.SetTip(genesis.Hash)
