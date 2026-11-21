@@ -173,8 +173,10 @@ func openWithProtocolAndClock(store chainStore, genesisState *tokenomics.Genesis
 		return nil, err
 	}
 
-	// The durable tip is the tie-break anchor. Reconcile only to strictly
-	// greater-work stored chains, preserving the existing equal-work rule.
+	// Startup selection policy: strictly greater cumulative work wins; equal
+	// work keeps the first-seen valid branch (journal insertion order). This is
+	// a local tie-break policy, not a validity rule. The durable tip remains the
+	// initial anchor, so an equal-work branch never displaces it.
 	bestTip := tip
 	bestChain := candidate
 	bestWork := work(candidate)
