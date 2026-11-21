@@ -170,7 +170,7 @@ func (s *Store) truncateTail(offset int64) error {
 
 func (s *Store) appendRecord(typ byte, payload []byte) error {
 	if s.failed != nil {
-		return fmt.Errorf("store is failed after journal rollback failure: %w", s.failed)
+		return fmt.Errorf("store is failed after journal durability failure: %w", s.failed)
 	}
 	if s.file == nil {
 		return errors.New("store is closed")
@@ -215,7 +215,11 @@ func (s *Store) appendRecord(typ byte, payload []byte) error {
 		return rollback(io.ErrShortWrite)
 	}
 	if err := s.file.Sync(); err != nil {
-		return rollback(err)
+		rollbackErr := rollback(err)
+		if s.failed == nil {
+			s.failed = fmt.Errorf("append journal sync failed: %w", err)
+		}
+		return errors.Join(rollbackErr, fmt.Errorf("store is failed after journal durability failure: %w", s.failed))
 	}
 	return nil
 }
