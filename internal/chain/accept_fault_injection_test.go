@@ -1,7 +1,9 @@
 package chain
 
 import (
+	"bytes"
 	"errors"
+	"os"
 	"sync"
 	"testing"
 
@@ -287,5 +289,59 @@ func TestOpenPreservesDurableTipWhenStoredForkHasEqualWork(t *testing.T) {
 	}
 	if recovered.TipHash() != a1.Hash {
 		t.Fatalf("equal-work startup reconciliation changed tip to %s, want durable tip %s", recovered.TipHash(), a1.Hash)
+	}
+}
+
+func TestOpenReturnsErrorWhenBestTipRepairFailsWithoutChangingJournal(t *testing.T) {
+	dir := t.TempDir()
+	raw, err := storage.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gs, key, network := v2TestState(t)
+	wireName, err := networkid.WireNetworkName(network)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initialized, err := openWithProtocolAndClock(raw, &gs, 2, network, wireName, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	genesis := initialized.Tip()
+	higher := mineAcceptFaultBlock(t, genesis, key, network, 0, 31)
+	if err := raw.SaveBlock(higher); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(raw.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fault := &acceptFaultStore{Store: raw, failSetTip: 1}
+	if _, err := openWithProtocolAndClock(fault, &gs, 2, network, wireName, nil); !errors.Is(err, errInjectedStoreFailure) {
+		t.Fatalf("Open error=%v, want injected durable-tip repair failure", err)
+	}
+	after, err := os.ReadFile(raw.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(after, before) {
+		t.Fatal("failed startup tip repair changed the journal")
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := storage.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	recovered, err := OpenV2WithGenesisState(reopened, gs, network, wireName)
+	if err != nil {
+		t.Fatalf("reopen after clearing the fault: %v", err)
+	}
+	if recovered.TipHash() != higher.Hash || reopened.Tip() != higher.Hash {
+		t.Fatal("reopen did not repair the durable tip to the higher-work stored branch")
 	}
 }
