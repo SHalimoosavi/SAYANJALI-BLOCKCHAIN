@@ -243,7 +243,6 @@ func TestAppendRollbackTruncateFailureIsReportedAndFinalTailRecovers(t *testing.
 	}
 }
 
-
 func TestAppendAfterRollbackTruncateFailureIsRejectedOnReplay(t *testing.T) {
 	dir := t.TempDir()
 	store, err := Open(dir)
