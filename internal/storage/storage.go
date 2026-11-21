@@ -35,14 +35,15 @@ type journalFile interface {
 }
 
 type Store struct {
-	mu          sync.Mutex
-	dir         string
-	file        journalFile
-	blocks      map[string][]byte
-	blockOrder  []string
-	tip         string
-	checkpoints map[string][]byte
-	failed      error
+	mu            sync.Mutex
+	dir           string
+	file          journalFile
+	blocks        map[string][]byte
+	blockOrder    []string
+	tip           string
+	checkpoints   map[string][]byte
+	failed        error
+	failedMessage string
 }
 
 func Open(dir string) (*Store, error) {
@@ -168,9 +169,20 @@ func (s *Store) truncateTail(offset int64) error {
 	return nil
 }
 
+func (s *Store) failedStoreError() error {
+	if s.failed == nil {
+		return nil
+	}
+	message := s.failedMessage
+	if message == "" {
+		message = "store is failed after journal rollback failure"
+	}
+	return fmt.Errorf("%s: %w", message, s.failed)
+}
+
 func (s *Store) appendRecord(typ byte, payload []byte) error {
 	if s.failed != nil {
-		return fmt.Errorf("store is failed after journal rollback failure: %w", s.failed)
+		return s.failedStoreError()
 	}
 	if s.file == nil {
 		return errors.New("store is closed")
@@ -185,7 +197,8 @@ func (s *Store) appendRecord(typ byte, payload []byte) error {
 	rollback := func(cause error) error {
 		poison := func(context string, rollbackErr error) error {
 			s.failed = fmt.Errorf("%s: %w", context, rollbackErr)
-			return errors.Join(cause, fmt.Errorf("store is failed after journal rollback failure: %w", s.failed))
+			s.failedMessage = "store is failed after journal rollback failure"
+			return errors.Join(cause, s.failedStoreError())
 		}
 		if truncateErr := s.file.Truncate(start); truncateErr != nil {
 			return poison("rollback incomplete journal record", truncateErr)
@@ -215,7 +228,16 @@ func (s *Store) appendRecord(typ byte, payload []byte) error {
 		return rollback(io.ErrShortWrite)
 	}
 	if err := s.file.Sync(); err != nil {
-		return rollback(err)
+		rollbackErr := rollback(err)
+		if s.failed == nil {
+			// Even a successful rollback cannot prove whether the failed
+			// append Sync reached stable storage. Poison this Store until
+			// reopen so later successful writes cannot mask that ambiguity.
+			s.failed = err
+			s.failedMessage = "store is failed after journal sync failure"
+			return errors.Join(rollbackErr, s.failedStoreError())
+		}
+		return rollbackErr
 	}
 	return nil
 }
@@ -239,7 +261,7 @@ func (s *Store) SetTip(hash string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.failed != nil {
-		return fmt.Errorf("store is failed after journal rollback failure: %w", s.failed)
+		return s.failedStoreError()
 	}
 	if s.file == nil {
 		return errors.New("store is closed")
