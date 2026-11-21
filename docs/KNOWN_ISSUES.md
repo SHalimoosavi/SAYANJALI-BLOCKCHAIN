@@ -62,3 +62,12 @@ Do not merge a Go 1.27.1-based release after this finding without either upgradi
 - **Impact:** the node can retain an older active tip even though a higher-work block is already persisted. A failed partial journal append can also obstruct a subsequent storage retry unless the incomplete record is rolled back.
 - **Proposed remediation:** allow retry of a persisted candidate whose promotion is pending, reconcile stored chains against the durable tip using the existing strict-greater-work rule, retain deterministic journal insertion order for equal-work selection, and roll back incomplete journal records after append failures.
 - **Verification status:** fault-injection regression tests reproduce retry, restart-recovery and reorganisation failures on the unfixed implementation. The PR #29 head passed Go 1.27.4 Production Validation, Build 1 C-1 Verification, and Go race/coverage workflows; these results apply to the PR branch, not to main.
+
+## Startup equal-work branch selection policy
+
+- **ID:** CHAIN-EQUAL-WORK-001
+- **Status:** Explicit local startup-selection policy; not a validity rule
+- **Location:** `internal/chain/chain.go`, startup reconciliation loop; `internal/storage/storage.go`, `Store.AllBlocks`
+- **Rule:** Startup begins with the durable tip and considers valid stored leaf chains. A candidate replaces the current selection only when its cumulative work is strictly greater. Equal cumulative work does not replace the current selection; among equal-work candidates above a lower-work durable tip, the first valid candidate encountered in journal insertion order remains selected.
+- **Implication:** Both equal-work branches may be valid. This rule determines the local active-chain choice at startup; it does not make the other branch invalid and does not alter block validation or cumulative-work calculation.
+- **Verification:** PR #29 adds a repeated reopen regression test for two equal-work branches above a lower-work durable tip. Test results must be confirmed by CI before merge.
