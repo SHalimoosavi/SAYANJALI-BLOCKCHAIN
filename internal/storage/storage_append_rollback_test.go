@@ -242,3 +242,49 @@ func TestAppendRollbackTruncateFailureIsReportedAndFinalTailRecovers(t *testing.
 		t.Fatalf("failed tip append unexpectedly replayed tip %q", recovered.Tip())
 	}
 }
+
+
+func TestAppendAfterRollbackTruncateFailureIsRejectedOnReplay(t *testing.T) {
+	dir := t.TempDir()
+	store, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	genesis, err := block.Genesis()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveBlock(genesis); err != nil {
+		t.Fatal(err)
+	}
+
+	// Leave an incomplete SetTip record by making its payload write and
+	// rollback truncate fail. The failed tail must not be silently skipped.
+	fault := &faultJournalFile{
+		journalFile:      store.file,
+		failPayloadWrite: true,
+		failTruncate:     true,
+		skipSync:         true,
+	}
+	store.file = fault
+	err = store.SetTip(genesis.Hash)
+	if !errors.Is(err, errInjectedPayloadWrite) || !errors.Is(err, errInjectedTruncate) {
+		t.Fatalf("SetTip error=%v, want append and rollback failures", err)
+	}
+
+	// The Store does not currently poison itself after rollback failure.
+	// O_APPEND therefore places this complete record behind the corrupt tail.
+	// Replay must reject the journal rather than silently skipping either record.
+	fault.failPayloadWrite = false
+	fault.failTruncate = false
+	fault.writes = 0
+	if err := store.SaveBlock(genesis); err != nil {
+		t.Fatalf("later append: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(dir); err == nil {
+		t.Fatal("replay silently accepted a record appended behind an unrolled-back tail")
+	}
+}
