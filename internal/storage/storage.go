@@ -185,7 +185,7 @@ func (s *Store) appendRecord(typ byte, payload []byte) error {
 	rollback := func(cause error) error {
 		poison := func(context string, rollbackErr error) error {
 			s.failed = fmt.Errorf("%s: %w", context, rollbackErr)
-			return errors.Join(cause, fmt.Errorf("store is failed after journal rollback failure: %w", s.failed))
+			return errors.Join(cause, fmt.Errorf("store is failed after journal durability failure: %w", s.failed))
 		}
 		if truncateErr := s.file.Truncate(start); truncateErr != nil {
 			return poison("rollback incomplete journal record", truncateErr)
@@ -243,7 +243,7 @@ func (s *Store) SetTip(hash string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.failed != nil {
-		return fmt.Errorf("store is failed after journal rollback failure: %w", s.failed)
+		return fmt.Errorf("store is failed after journal durability failure: %w", s.failed)
 	}
 	if s.file == nil {
 		return errors.New("store is closed")
