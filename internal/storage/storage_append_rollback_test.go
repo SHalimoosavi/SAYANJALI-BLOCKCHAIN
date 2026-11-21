@@ -90,6 +90,7 @@ func TestAppendRollbackAfterHeaderAllowsLaterAppendAndReplay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("full replay after later append: %v", err)
 	}
+	replayed.file = unsyncedJournalFile{journalFile: replayed.file}
 	defer replayed.Close()
 	if !replayed.HasBlock(genesis.Hash) || replayed.Tip() != genesis.Hash {
 		t.Fatal("replay did not recover the later successful block and tip records")
@@ -134,6 +135,7 @@ func TestAppendRollbackPreservesEarlierFsyncedRecord(t *testing.T) {
 	if err != nil {
 		t.Fatalf("replay after later append rollback: %v", err)
 	}
+	replayed.file = unsyncedJournalFile{journalFile: replayed.file}
 	defer replayed.Close()
 	if !replayed.HasBlock(genesis.Hash) {
 		t.Fatal("rollback removed an earlier successfully fsynced block record")
@@ -185,6 +187,7 @@ func TestAppendRollbackSyncFailureCanRecoverOnLaterAppendAndReplay(t *testing.T)
 	if err != nil {
 		t.Fatalf("replay after rollback-sync failure: %v", err)
 	}
+	replayed.file = unsyncedJournalFile{journalFile: replayed.file}
 	defer replayed.Close()
 	if !replayed.HasBlock(genesis.Hash) || replayed.Tip() != genesis.Hash {
 		t.Fatal("replay did not recover later records after rollback-sync failure")
