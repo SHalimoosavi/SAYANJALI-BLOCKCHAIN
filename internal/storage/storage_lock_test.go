@@ -123,7 +123,7 @@ func TestRejectedOpenDoesNotTouchJournalBytes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := tail.Write([]byte("partial-final-header")); err != nil {
+	if _, err := tail.Write([]byte("partial")); err != nil {
 		_ = tail.Close()
 		t.Fatal(err)
 	}
