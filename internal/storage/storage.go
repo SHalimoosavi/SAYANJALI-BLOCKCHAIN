@@ -38,6 +38,7 @@ type Store struct {
 	mu          sync.Mutex
 	dir         string
 	file        journalFile
+	lock        *directoryLock
 	blocks      map[string][]byte
 	blockOrder  []string
 	tip         string
@@ -49,32 +50,39 @@ func Open(dir string) (*Store, error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(filepath.Join(dir, "ledger.journal"), os.O_CREATE|os.O_RDWR|os.O_APPEND, 0600) // #nosec G304 -- dir is the operator-configured node data directory; filename is fixed.
+	// The directory lock must be held before the journal is opened or replayed.
+	lock, err := acquireDirectoryLock(dir)
 	if err != nil {
 		return nil, err
 	}
-	s := &Store{dir: dir, file: f, blocks: make(map[string][]byte), checkpoints: make(map[string][]byte)}
+	f, err := os.OpenFile(filepath.Join(dir, "ledger.journal"), os.O_CREATE|os.O_RDWR|os.O_APPEND, 0600) // #nosec G304 -- dir is the operator-configured node data directory; filename is fixed.
+	if err != nil {
+		return nil, errors.Join(fmt.Errorf("open journal: %w", err), releaseDirectoryLock(lock))
+	}
+	s := &Store{dir: dir, file: f, lock: lock, blocks: make(map[string][]byte), checkpoints: make(map[string][]byte)}
 	if err := s.replay(); err != nil {
-		if closeErr := f.Close(); closeErr != nil {
-			return nil, errors.Join(err, closeErr)
-		}
-		return nil, err
+		closeErr := f.Close()
+		s.file = nil
+		lockErr := releaseDirectoryLock(s.lock)
+		s.lock = nil
+		return nil, errors.Join(err, closeErr, lockErr)
 	}
 	return s, nil
 }
 func (s *Store) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.file == nil {
-		return nil
+	var syncErr, closeErr, lockErr error
+	if s.file != nil {
+		syncErr = s.file.Sync()
+		closeErr = s.file.Close()
+		s.file = nil
 	}
-	err := s.file.Sync()
-	ce := s.file.Close()
-	s.file = nil
-	if err != nil {
-		return err
+	if s.lock != nil {
+		lockErr = releaseDirectoryLock(s.lock)
+		s.lock = nil
 	}
-	return ce
+	return errors.Join(syncErr, closeErr, lockErr)
 }
 func (s *Store) replay() error {
 	if _, err := s.file.Seek(0, io.SeekStart); err != nil {
