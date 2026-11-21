@@ -194,7 +194,7 @@ func TestAppendRollbackSyncFailureCanRecoverOnLaterAppendAndReplay(t *testing.T)
 	}
 }
 
-func TestAppendRollbackFailureIsReportedAndReplayRejectsCorruptTail(t *testing.T) {
+func TestAppendRollbackTruncateFailureIsReportedAndFinalTailRecovers(t *testing.T) {
 	dir := t.TempDir()
 	store, err := Open(dir)
 	if err != nil {
