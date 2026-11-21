@@ -357,3 +357,50 @@ func TestAppendRollbackSeekFailurePoisonsStoreUntilReopen(t *testing.T) {
 		t.Fatal("reopen did not preserve the earlier block and discard the failed tip record")
 	}
 }
+
+func TestAppendSyncFailurePoisonsStoreUntilReopen(t *testing.T) {
+	dir := t.TempDir()
+	store, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	genesis, err := block.Genesis()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveBlock(genesis); err != nil {
+		t.Fatal(err)
+	}
+
+	// The append itself is complete, but its first Sync fails. The existing
+	// rollback truncates the attempted record and its following Sync succeeds.
+	fault := &faultJournalFile{
+		journalFile: store.file,
+		failSync:    true,
+	}
+	store.file = fault
+	if err := store.SaveBlock(genesis); !errors.Is(err, errInjectedSync) {
+		t.Fatalf("SaveBlock error=%v, want injected append Sync failure", err)
+	}
+
+	// A later successful Sync cannot establish whether the failed fsync's
+	// dirty pages were already lost. The live Store must stay poisoned.
+	if err := store.SaveBlock(genesis); err == nil || !strings.Contains(err.Error(), "store is failed after journal rollback failure") {
+		t.Fatalf("later SaveBlock error=%v, want failed-store error", err)
+	}
+	if err := store.SetTip(genesis.Hash); err == nil || !strings.Contains(err.Error(), "store is failed after journal rollback failure") {
+		t.Fatalf("later SetTip error=%v, want failed-store error", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := Open(dir)
+	if err != nil {
+		t.Fatalf("reopen after successful rollback should replay clean journal: %v", err)
+	}
+	defer reopened.Close()
+	if !reopened.HasBlock(genesis.Hash) || reopened.Tip() != "" {
+		t.Fatal("reopen did not preserve the prior durable block and clean tip state")
+	}
+}
