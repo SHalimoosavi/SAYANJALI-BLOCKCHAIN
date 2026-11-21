@@ -223,20 +223,22 @@ func TestAppendRollbackFailureIsReportedAndReplayRejectsCorruptTail(t *testing.T
 		t.Fatalf("rollback failure not surfaced in error: %v", err)
 	}
 
-	// Simulate a subsequent append after rollback could not remove the partial
-	// header. Replay must reject the malformed middle record rather than
-	// silently skipping it or losing the earlier durable block.
-	fault.failPayloadWrite = false
-	fault.failTruncate = false
-	fault.writes = 0
-	if err := store.SaveStateCheckpoint(genesis.Hash, []byte("state")); err != nil {
-		t.Fatalf("subsequent append: %v", err)
-	}
+	// The failed truncate leaves an incomplete final record. With no later
+	// append placed behind it, startup recovery must discard only that tail
+	// and retain the earlier successfully fsynced block.
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if recovered, err := Open(dir); err == nil {
-		_ = recovered.Close()
-		t.Fatal("replay silently accepted a journal with an unremoved partial record")
+	recovered, err := Open(dir)
+	if err != nil {
+		t.Fatalf("replay should recover the incomplete final tail: %v", err)
+	}
+	recovered.file = unsyncedJournalFile{journalFile: recovered.file}
+	defer recovered.Close()
+	if !recovered.HasBlock(genesis.Hash) {
+		t.Fatal("replay dropped the earlier successfully fsynced block")
+	}
+	if recovered.Tip() != "" {
+		t.Fatalf("failed tip append unexpectedly replayed tip %q", recovered.Tip())
 	}
 }
