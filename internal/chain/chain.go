@@ -23,26 +23,37 @@ import (
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/pkg/protocol"
 )
 
+type chainStore interface {
+	AllBlocks() ([]*block.Block, error)
+	SaveBlock(*block.Block) error
+	SetTip(string) error
+	Tip() string
+	SaveStateCheckpoint(string, []byte) error
+	GetStateCheckpoint(string) ([]byte, bool)
+	Close() error
+}
+
 type Chain struct {
-	mu              sync.RWMutex
-	store           *storage.Store
-	blocks          map[string]*block.Block
-	activeTip       string
-	active          []*block.Block
-	balances        state.Balances
-	supply          uint64
-	genesisSupply   uint64
-	miningIssued    uint64
-	genesisState    *tokenomics.GenesisState
-	confirmedTx     map[string]struct{}
-	protocolVersion uint8
-	networkID       string
-	networkName     string
-	clock           clock.Clock
-	nonces          map[string]uint64
-	stateSnapshots  map[string]*statecommitment.Snapshot
-	stateRoot       string
-	reorgCandidates []transaction.Transaction
+	mu                sync.RWMutex
+	store             chainStore
+	blocks            map[string]*block.Block
+	activeTip         string
+	active            []*block.Block
+	balances          state.Balances
+	supply            uint64
+	genesisSupply     uint64
+	miningIssued      uint64
+	genesisState      *tokenomics.GenesisState
+	confirmedTx       map[string]struct{}
+	protocolVersion   uint8
+	networkID         string
+	networkName       string
+	clock             clock.Clock
+	nonces            map[string]uint64
+	stateSnapshots    map[string]*statecommitment.Snapshot
+	pendingPromotions map[string]struct{}
+	stateRoot         string
+	reorgCandidates   []transaction.Transaction
 }
 
 func Open(store *storage.Store) (*Chain, error) {
@@ -102,22 +113,23 @@ func openWithProtocol(store *storage.Store, genesisState *tokenomics.GenesisStat
 	return openWithProtocolAndClock(store, genesisState, protocolVersion, networkID, networkName, clock.RealClock{})
 }
 
-func openWithProtocolAndClock(store *storage.Store, genesisState *tokenomics.GenesisState, protocolVersion uint8, networkID, networkName string, clk clock.Clock) (*Chain, error) {
+func openWithProtocolAndClock(store chainStore, genesisState *tokenomics.GenesisState, protocolVersion uint8, networkID, networkName string, clk clock.Clock) (*Chain, error) {
 	if clk == nil {
 		clk = clock.RealClock{}
 	}
 	c := &Chain{
-		store:           store,
-		blocks:          make(map[string]*block.Block),
-		balances:        make(state.Balances),
-		confirmedTx:     make(map[string]struct{}),
-		genesisState:    genesisState,
-		protocolVersion: protocolVersion,
-		networkID:       networkID,
-		networkName:     networkName,
-		clock:           clk,
-		nonces:          make(map[string]uint64),
-		stateSnapshots:  make(map[string]*statecommitment.Snapshot),
+		store:             store,
+		blocks:            make(map[string]*block.Block),
+		balances:          make(state.Balances),
+		confirmedTx:       make(map[string]struct{}),
+		genesisState:      genesisState,
+		protocolVersion:   protocolVersion,
+		networkID:         networkID,
+		networkName:       networkName,
+		clock:             clk,
+		nonces:            make(map[string]uint64),
+		stateSnapshots:    make(map[string]*statecommitment.Snapshot),
+		pendingPromotions: make(map[string]struct{}),
 	}
 	bs, err := store.AllBlocks()
 	if err != nil {
@@ -160,13 +172,62 @@ func openWithProtocolAndClock(store *storage.Store, genesisState *tokenomics.Gen
 	if err := c.validateChain(candidate); err != nil {
 		return nil, err
 	}
-	c.activeTip = tip
-	c.active = candidate
-	if err := c.replayState(candidate); err != nil {
+
+	// Startup selection policy: strictly greater cumulative work wins; equal
+	// work keeps the first-seen valid branch (journal insertion order). This is
+	// a local tie-break policy, not a validity rule. The durable tip remains the
+	// initial anchor, so an equal-work branch never displaces it.
+	bestTip := tip
+	bestChain := candidate
+	bestWork := work(candidate)
+	hasChild := make(map[string]struct{}, len(bs))
+	for _, stored := range bs {
+		if stored.Index > 0 {
+			hasChild[stored.PreviousHash] = struct{}{}
+		}
+	}
+	for _, stored := range bs {
+		if _, hasStoredChild := hasChild[stored.Hash]; hasStoredChild {
+			continue
+		}
+		storedChain, buildErr := c.buildChain(stored.Hash)
+		if buildErr != nil {
+			continue
+		}
+		if validateErr := c.validateChain(storedChain); validateErr != nil {
+			// A malformed leaf must not hide a valid ancestor.
+			validPrefix := false
+			for end := len(storedChain) - 2; end >= 0; end-- {
+				prefix := storedChain[:end+1]
+				if validateChainErr := c.validateChain(prefix); validateChainErr == nil {
+					storedChain = prefix
+					validPrefix = true
+					break
+				}
+			}
+			if !validPrefix {
+				continue
+			}
+		}
+		storedWork := work(storedChain)
+		if storedWork.Cmp(bestWork) > 0 {
+			bestWork = storedWork
+			bestChain = storedChain
+			bestTip = storedChain[len(storedChain)-1].Hash
+		}
+	}
+	c.activeTip = bestTip
+	c.active = bestChain
+	if err := c.replayState(bestChain); err != nil {
 		return nil, err
 	}
-	if err := c.initializeIncrementalState(candidate); err != nil {
+	if err := c.initializeIncrementalState(bestChain); err != nil {
 		return nil, err
+	}
+	if bestTip != tip {
+		if err := store.SetTip(bestTip); err != nil {
+			return nil, fmt.Errorf("repair durable best tip: %w", err)
+		}
 	}
 	return c, nil
 }
@@ -930,8 +991,20 @@ func (c *Chain) Accept(b *block.Block) (bool, string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if _, ok := c.blocks[b.Hash]; ok {
-		return false, "duplicate", nil
+	if _, stored := c.blocks[b.Hash]; stored {
+		active := false
+		for _, activeBlock := range c.active {
+			if activeBlock.Hash == b.Hash {
+				active = true
+				break
+			}
+		}
+		if active {
+			return false, "duplicate", nil
+		}
+		if _, pending := c.pendingPromotions[b.Hash]; !pending {
+			return false, "duplicate", nil
+		}
 	}
 	if b.Index == 0 {
 		return false, "genesis", errors.New("genesis already exists")
@@ -967,13 +1040,19 @@ func (c *Chain) Accept(b *block.Block) (bool, string, error) {
 
 	candidate := append(append([]*block.Block(nil), prefix...), b)
 
-	// Persist the block before making it eligible to become the durable tip.
-	if err := c.store.SaveBlock(b); err != nil {
-		return false, "storage", err
+	// Persist a new block before making it eligible to become the durable tip.
+	if _, stored := c.blocks[b.Hash]; !stored {
+		if err := c.store.SaveBlock(b); err != nil {
+			return false, "storage", err
+		}
+		c.blocks[b.Hash] = b
 	}
-	c.blocks[b.Hash] = b
 
 	if work(candidate).Cmp(work(c.active)) > 0 {
+		// Remember a persisted candidate whose promotion is still pending.
+		// This permits retry after checkpoint or tip persistence failures.
+		c.pendingPromotions[b.Hash] = struct{}{}
+
 		// Derive the complete winning state before changing either the
 		// durable tip or the in-memory active chain.
 		winningState, err := c.stateForParent(prefix)
@@ -1009,6 +1088,7 @@ func (c *Chain) Accept(b *block.Block) (bool, string, error) {
 		if err := c.store.SetTip(b.Hash); err != nil {
 			return false, "storage", err
 		}
+		delete(c.pendingPromotions, b.Hash)
 
 		if c.protocolVersion >= 2 {
 			common := -1
@@ -1071,6 +1151,7 @@ func (c *Chain) Accept(b *block.Block) (bool, string, error) {
 		return true, "best", nil
 	}
 
+	delete(c.pendingPromotions, b.Hash)
 	return true, "fork", nil
 }
 

@@ -51,3 +51,33 @@ Do not merge a Go 1.27.1-based release after this finding without either upgradi
 - **Reproduction:** `genesisconfig.Validate` rejects duplicate recipient addresses, but the node loads `tokenomics.GenesisState` directly and its `ValidateStructure` checks categories/amounts without checking recipient uniqueness. Characterization test in PR #21: `internal/tokenomics/genesisstate_duplicate_recipient_audit_test.go`, passed in Build 1 C-1 Verification run 43136118051.
 - **Impact:** a GenesisState can aggregate multiple allocation categories to one address through the node loading path, despite the production config validator's unique-recipient rule.
 - **Proposed remediation:** owner decision note in PR #21 documents the options. Do not change genesis acceptance rules or existing genesis data without explicit approval.
+
+## Persisted block can remain unpromoted after tip-write failure
+
+- **ID:** CHAIN-ACCEPT-001
+- **Severity:** High
+- **Status:** Confirmed on baseline main; fix included in PR #29 and not yet merged to main
+- **Location:** `internal/chain/chain.go`, `Chain.Accept` and startup chain reconstruction; `internal/storage/storage.go`, journal append handling
+- **Reproduction:** when `SaveBlock` succeeds and the subsequent `SetTip` fails, the block remains in durable storage and in the in-memory block map. A retry is then classified as a duplicate before the promotion path can run. On restart, the loader trusts the stored tip record and does not reconcile it against higher-work stored chains.
+- **Impact:** the node can retain an older active tip even though a higher-work block is already persisted. A failed partial journal append can also obstruct a subsequent storage retry unless the incomplete record is rolled back.
+- **Proposed remediation:** allow retry of a persisted candidate whose promotion is pending, reconcile stored chains against the durable tip using the existing strict-greater-work rule, retain deterministic journal insertion order for equal-work selection, and roll back incomplete journal records after append failures.
+- **Verification status:** fault-injection regression tests reproduce retry, restart-recovery and reorganisation failures on the unfixed implementation. The PR #29 head passed Go 1.27.4 Production Validation, Build 1 C-1 Verification, and Go race/coverage workflows; these results apply to the PR branch, not to main.
+
+## Startup equal-work branch selection policy
+
+- **ID:** CHAIN-EQUAL-WORK-001
+- **Status:** Explicit local startup-selection policy; not a validity rule
+- **Location:** `internal/chain/chain.go`, startup reconciliation loop; `internal/storage/storage.go`, `Store.AllBlocks`
+- **Rule:** Startup begins with the durable tip and considers valid stored leaf chains. A candidate replaces the current selection only when its cumulative work is strictly greater. Equal cumulative work does not replace the current selection; among equal-work candidates above a lower-work durable tip, the first valid candidate encountered in journal insertion order remains selected.
+- **Implication:** Both equal-work branches may be valid. This rule determines the local active-chain choice at startup; it does not make the other branch invalid and does not alter block validation or cumulative-work calculation.
+- **Verification:** PR #29 adds a repeated reopen regression test for two equal-work branches above a lower-work durable tip. Test results must be confirmed by CI before merge.
+
+## Startup fails closed when durable best-tip repair fails
+
+- **ID:** CHAIN-STARTUP-REPAIR-001
+- **Status:** Implemented and covered by fault-injection regression test in PR #29; not merged to main
+- **Location:** `internal/chain/chain.go`, startup reconciliation and durable tip repair
+- **Behavior:** Startup first selects the best-work valid stored chain under the existing strict-greater-work comparison. If persisting the repaired tip with `SetTip` fails, chain opening returns an error (`repair durable best tip`) rather than returning a running chain whose in-memory active tip disagrees with the durable tip.
+- **Recovery:** A later open replays the journal and retries reconciliation after the storage fault is cleared. The regression test injects a failure before the underlying `SetTip` append, verifies the journal bytes are unchanged, then reopens and verifies the higher-work branch is durably selected.
+- **Important boundary:** The unchanged-journal assertion applies to the injected pre-append failure. A real journal write failure can leave an incomplete tail; storage rollback/replay recovery handles that separately. If rollback itself fails, the live Store is poisoned and must be closed and reopened.
+- **Protocol scope:** This is fail-closed startup error handling. It does not alter chain validity, cumulative-work calculation, consensus rules, wire format or protocol vectors.
