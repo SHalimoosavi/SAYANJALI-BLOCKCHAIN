@@ -35,13 +35,13 @@ type journalFile interface {
 }
 
 type Store struct {
-	mu          sync.Mutex
-	dir         string
-	file        journalFile
-	blocks      map[string][]byte
-	blockOrder  []string
-	tip         string
-	checkpoints map[string][]byte
+	mu            sync.Mutex
+	dir           string
+	file          journalFile
+	blocks        map[string][]byte
+	blockOrder    []string
+	tip           string
+	checkpoints   map[string][]byte
 	failed        error
 	failedMessage string
 }
