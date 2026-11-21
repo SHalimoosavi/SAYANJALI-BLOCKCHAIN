@@ -24,10 +24,20 @@ const (
 	maxRecord                    = 4 * 1024 * 1024
 )
 
+type journalFile interface {
+	io.Reader
+	io.Writer
+	io.Seeker
+	io.Closer
+	Stat() (os.FileInfo, error)
+	Truncate(int64) error
+	Sync() error
+}
+
 type Store struct {
 	mu          sync.Mutex
 	dir         string
-	file        *os.File
+	file        journalFile
 	blocks      map[string][]byte
 	blockOrder  []string
 	tip         string
