@@ -42,6 +42,7 @@ type Store struct {
 	blockOrder  []string
 	tip         string
 	checkpoints map[string][]byte
+	failed      error
 }
 
 func Open(dir string) (*Store, error) {
@@ -168,6 +169,12 @@ func (s *Store) truncateTail(offset int64) error {
 }
 
 func (s *Store) appendRecord(typ byte, payload []byte) error {
+	if s.failed != nil {
+		return fmt.Errorf("store is failed after journal rollback failure: %w", s.failed)
+	}
+	if s.file == nil {
+		return errors.New("store is closed")
+	}
 	if len(payload) > maxRecord || uint64(len(payload)) > uint64(^uint32(0)) {
 		return errors.New("record too large")
 	}
@@ -176,14 +183,18 @@ func (s *Store) appendRecord(typ byte, payload []byte) error {
 		return err
 	}
 	rollback := func(cause error) error {
+		poison := func(context string, rollbackErr error) error {
+			s.failed = fmt.Errorf("%s: %w", context, rollbackErr)
+			return errors.Join(cause, fmt.Errorf("store is failed after journal rollback failure: %w", s.failed))
+		}
 		if truncateErr := s.file.Truncate(start); truncateErr != nil {
-			return errors.Join(cause, fmt.Errorf("rollback incomplete journal record: %w", truncateErr))
+			return poison("rollback incomplete journal record", truncateErr)
 		}
 		if syncErr := s.file.Sync(); syncErr != nil {
-			return errors.Join(cause, fmt.Errorf("sync journal rollback: %w", syncErr))
+			return poison("sync journal rollback", syncErr)
 		}
 		if _, seekErr := s.file.Seek(0, io.SeekEnd); seekErr != nil {
-			return errors.Join(cause, fmt.Errorf("seek after journal rollback: %w", seekErr))
+			return poison("seek after journal rollback", seekErr)
 		}
 		return cause
 	}
@@ -227,6 +238,12 @@ func (s *Store) SaveBlock(b *block.Block) error {
 func (s *Store) SetTip(hash string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.failed != nil {
+		return fmt.Errorf("store is failed after journal rollback failure: %w", s.failed)
+	}
+	if s.file == nil {
+		return errors.New("store is closed")
+	}
 	if hash != "" {
 		if _, ok := s.blocks[hash]; !ok {
 			return errors.New("tip block is not stored")
