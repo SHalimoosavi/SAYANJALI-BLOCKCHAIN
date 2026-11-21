@@ -71,3 +71,13 @@ Do not merge a Go 1.27.1-based release after this finding without either upgradi
 - **Rule:** Startup begins with the durable tip and considers valid stored leaf chains. A candidate replaces the current selection only when its cumulative work is strictly greater. Equal cumulative work does not replace the current selection; among equal-work candidates above a lower-work durable tip, the first valid candidate encountered in journal insertion order remains selected.
 - **Implication:** Both equal-work branches may be valid. This rule determines the local active-chain choice at startup; it does not make the other branch invalid and does not alter block validation or cumulative-work calculation.
 - **Verification:** PR #29 adds a repeated reopen regression test for two equal-work branches above a lower-work durable tip. Test results must be confirmed by CI before merge.
+
+## Startup fails closed when durable best-tip repair fails
+
+- **ID:** CHAIN-STARTUP-REPAIR-001
+- **Status:** Implemented and covered by fault-injection regression test in PR #29; not merged to main
+- **Location:** `internal/chain/chain.go`, startup reconciliation and durable tip repair
+- **Behavior:** Startup first selects the best-work valid stored chain under the existing strict-greater-work comparison. If persisting the repaired tip with `SetTip` fails, chain opening returns an error (`repair durable best tip`) rather than returning a running chain whose in-memory active tip disagrees with the durable tip.
+- **Recovery:** A later open replays the journal and retries reconciliation after the storage fault is cleared. The regression test injects a failure before the underlying `SetTip` append, verifies the journal bytes are unchanged, then reopens and verifies the higher-work branch is durably selected.
+- **Important boundary:** The unchanged-journal assertion applies to the injected pre-append failure. A real journal write failure can leave an incomplete tail; storage rollback/replay recovery handles that separately. If rollback itself fails, the live Store is poisoned and must be closed and reopened.
+- **Protocol scope:** This is fail-closed startup error handling. It does not alter chain validity, cumulative-work calculation, consensus rules, wire format or protocol vectors.
