@@ -6,12 +6,19 @@ import (
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/block"
 )
 
+type unsyncedJournalFile struct{ journalFile }
+
+func (f unsyncedJournalFile) Sync() error { return nil }
+
 func TestAllBlocksPreservesJournalOrderAcrossRestart(t *testing.T) {
 	dir := t.TempDir()
 	store, err := Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
+	// This test checks replay ordering, not fsync durability. Avoid adding
+	// four redundant syncs to the storage package test runtime.
+	store.file = unsyncedJournalFile{journalFile: store.file}
 	genesis, err := block.Genesis()
 	if err != nil {
 		t.Fatal(err)
