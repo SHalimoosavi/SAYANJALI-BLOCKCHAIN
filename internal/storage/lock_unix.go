@@ -15,7 +15,7 @@ func acquireDirectoryLock(dir string) (*directoryLock, error) {
 	if err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(filepath.Join(dir, directoryLockFileName), os.O_CREATE|os.O_RDWR, 0600)
+	f, err := os.OpenFile(filepath.Join(dir, directoryLockFileName), os.O_CREATE|os.O_RDWR, 0600) // #nosec G304 -- dir is the operator-configured node data directory; lock filename is fixed.
 	if err != nil {
 		releaseDirectoryLockReservation(key)
 		return nil, fmt.Errorf("open data directory lock: %w", err)
