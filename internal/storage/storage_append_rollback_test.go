@@ -12,6 +12,7 @@ var (
 	errInjectedPayloadWrite = errors.New("injected payload write failure")
 	errInjectedTruncate     = errors.New("injected truncate failure")
 	errInjectedSync         = errors.New("injected sync failure")
+	errInjectedSeek         = errors.New("injected seek failure")
 )
 
 type faultJournalFile struct {
@@ -19,6 +20,7 @@ type faultJournalFile struct {
 	failPayloadWrite bool
 	failTruncate     bool
 	failSync         bool
+	failSeek         bool
 	skipSync         bool
 	writes           int
 }
@@ -30,6 +32,14 @@ func (f *faultJournalFile) Write(p []byte) (int, error) {
 	}
 	f.writes++
 	return f.journalFile.Write(p)
+}
+
+func (f *faultJournalFile) Seek(offset int64, whence int) (int64, error) {
+	if f.failSeek && f.writes > 0 {
+		f.failSeek = false
+		return 0, errInjectedSeek
+	}
+	return f.journalFile.Seek(offset, whence)
 }
 
 func (f *faultJournalFile) Truncate(size int64) error {
@@ -145,7 +155,7 @@ func TestAppendRollbackPreservesEarlierFsyncedRecord(t *testing.T) {
 	}
 }
 
-func TestAppendRollbackSyncFailureCanRecoverOnLaterAppendAndReplay(t *testing.T) {
+func TestAppendRollbackSyncFailurePoisonsStoreUntilReopen(t *testing.T) {
 	dir := t.TempDir()
 	store, err := Open(dir)
 	if err != nil {
@@ -168,29 +178,28 @@ func TestAppendRollbackSyncFailureCanRecoverOnLaterAppendAndReplay(t *testing.T)
 		t.Fatalf("SaveBlock error=%v, want append and rollback-sync failures", err)
 	}
 
-	// Truncate succeeded before the rollback sync failed. A later append
-	// seeks to the actual end, writes a clean record, and a normal close
-	// syncs the recovered journal before replay.
+	// Truncate succeeded, but its durability sync failed. The live Store
+	// must reject every later append until it is closed and reopened.
 	fault.failPayloadWrite = false
+	fault.failSync = false
 	fault.writes = 0
-	if err := store.SaveBlock(genesis); err != nil {
-		t.Fatalf("later append after rollback-sync failure: %v", err)
+	if err := store.SaveBlock(genesis); err == nil || !strings.Contains(err.Error(), "store is failed after journal rollback failure") {
+		t.Fatalf("later SaveBlock error=%v, want poisoned-store error", err)
 	}
-	if err := store.SetTip(genesis.Hash); err != nil {
-		t.Fatalf("SetTip after rollback-sync failure: %v", err)
+	if err := store.SetTip(genesis.Hash); err == nil || !strings.Contains(err.Error(), "store is failed after journal rollback failure") {
+		t.Fatalf("later SetTip error=%v, want poisoned-store error", err)
 	}
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
 
-	replayed, err := Open(dir)
+	reopened, err := Open(dir)
 	if err != nil {
-		t.Fatalf("replay after rollback-sync failure: %v", err)
+		t.Fatalf("reopen should replay the truncatable tail: %v", err)
 	}
-	replayed.file = unsyncedJournalFile{journalFile: replayed.file}
-	defer replayed.Close()
-	if !replayed.HasBlock(genesis.Hash) || replayed.Tip() != genesis.Hash {
-		t.Fatal("replay did not recover later records after rollback-sync failure")
+	defer reopened.Close()
+	if !reopened.HasBlock(genesis.Hash) || reopened.Tip() != "" {
+		t.Fatal("reopen did not preserve the prior state and discard the failed append")
 	}
 }
 
@@ -258,7 +267,8 @@ func TestAppendAfterRollbackTruncateFailureIsRejectedOnReplay(t *testing.T) {
 	}
 
 	// Leave an incomplete SetTip record by making its payload write and
-	// rollback truncate fail. The failed tail must not be silently skipped.
+	// rollback truncate fail. The second append must now be rejected by
+	// the poisoned Store, rather than being placed behind the corrupt tail.
 	fault := &faultJournalFile{
 		journalFile:      store.file,
 		failPayloadWrite: true,
@@ -271,19 +281,75 @@ func TestAppendAfterRollbackTruncateFailureIsRejectedOnReplay(t *testing.T) {
 		t.Fatalf("SetTip error=%v, want append and rollback failures", err)
 	}
 
-	// The Store does not currently poison itself after rollback failure.
-	// O_APPEND therefore places this complete record behind the corrupt tail.
-	// Replay must reject the journal rather than silently skipping either record.
 	fault.failPayloadWrite = false
 	fault.failTruncate = false
 	fault.writes = 0
-	if err := store.SaveBlock(genesis); err != nil {
-		t.Fatalf("later append: %v", err)
+	if err := store.SaveBlock(genesis); err == nil || !strings.Contains(err.Error(), "store is failed after journal rollback failure") {
+		t.Fatalf("second append error=%v, want poisoned-store error", err)
+	}
+	if err := store.SetTip(genesis.Hash); err == nil || !strings.Contains(err.Error(), "store is failed after journal rollback failure") {
+		t.Fatalf("later SetTip error=%v, want poisoned-store error", err)
 	}
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Open(dir); err == nil {
-		t.Fatal("replay silently accepted a record appended behind an unrolled-back tail")
+
+	reopened, err := Open(dir)
+	if err != nil {
+		t.Fatalf("reopen should recover the incomplete final tail: %v", err)
+	}
+	defer reopened.Close()
+	if !reopened.HasBlock(genesis.Hash) || reopened.Tip() != "" {
+		t.Fatal("reopen did not preserve the earlier block and discard the failed tip record")
+	}
+}
+
+func TestAppendRollbackSeekFailurePoisonsStoreUntilReopen(t *testing.T) {
+	dir := t.TempDir()
+	store, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	genesis, err := block.Genesis()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveBlock(genesis); err != nil {
+		t.Fatal(err)
+	}
+
+	fault := &faultJournalFile{
+		journalFile:      store.file,
+		failPayloadWrite: true,
+		failSeek:         true,
+		skipSync:         true,
+	}
+	fault.writes = 0
+	store.file = fault
+	err = store.SetTip(genesis.Hash)
+	if !errors.Is(err, errInjectedPayloadWrite) || !errors.Is(err, errInjectedSeek) {
+		t.Fatalf("SetTip error=%v, want append and rollback-seek failures", err)
+	}
+
+	fault.failPayloadWrite = false
+	fault.failSeek = false
+	fault.writes = 0
+	if err := store.SaveBlock(genesis); err == nil || !strings.Contains(err.Error(), "store is failed after journal rollback failure") {
+		t.Fatalf("later SaveBlock error=%v, want poisoned-store error", err)
+	}
+	if err := store.SetTip(genesis.Hash); err == nil || !strings.Contains(err.Error(), "store is failed after journal rollback failure") {
+		t.Fatalf("later SetTip error=%v, want poisoned-store error", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := Open(dir)
+	if err != nil {
+		t.Fatalf("reopen should recover the truncated tail: %v", err)
+	}
+	defer reopened.Close()
+	if !reopened.HasBlock(genesis.Hash) || reopened.Tip() != "" {
+		t.Fatal("reopen did not preserve the earlier block and discard the failed tip record")
 	}
 }
