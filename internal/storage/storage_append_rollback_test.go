@@ -11,12 +11,14 @@ import (
 var (
 	errInjectedPayloadWrite = errors.New("injected payload write failure")
 	errInjectedTruncate     = errors.New("injected truncate failure")
+	errInjectedSync         = errors.New("injected sync failure")
 )
 
 type faultJournalFile struct {
 	journalFile
 	failPayloadWrite bool
 	failTruncate     bool
+	failSync         bool
 	writes           int
 }
 
@@ -34,6 +36,14 @@ func (f *faultJournalFile) Truncate(size int64) error {
 		return errInjectedTruncate
 	}
 	return f.journalFile.Truncate(size)
+}
+
+func (f *faultJournalFile) Sync() error {
+	if f.failSync {
+		f.failSync = false
+		return errInjectedSync
+	}
+	return f.journalFile.Sync()
 }
 
 func TestAppendRollbackAfterHeaderAllowsLaterAppendAndReplay(t *testing.T) {
@@ -126,6 +136,54 @@ func TestAppendRollbackPreservesEarlierFsyncedRecord(t *testing.T) {
 	}
 	if replayed.Tip() != "" {
 		t.Fatalf("failed tip append unexpectedly replayed tip %q", replayed.Tip())
+	}
+}
+
+
+func TestAppendRollbackSyncFailureCanRecoverOnLaterAppendAndReplay(t *testing.T) {
+	dir := t.TempDir()
+	store, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	genesis, err := block.Genesis()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fault := &faultJournalFile{
+		journalFile:      store.file,
+		failPayloadWrite: true,
+		failSync:         true,
+	}
+	store.file = fault
+	err = store.SaveBlock(genesis)
+	if !errors.Is(err, errInjectedPayloadWrite) || !errors.Is(err, errInjectedSync) {
+		t.Fatalf("SaveBlock error=%v, want append and rollback-sync failures", err)
+	}
+
+	// Truncate succeeded before the rollback sync failed. A later append
+	// seeks to the actual end, writes a clean record, and a normal close
+	// syncs the recovered journal before replay.
+	fault.failPayloadWrite = false
+	fault.writes = 0
+	if err := store.SaveBlock(genesis); err != nil {
+		t.Fatalf("later append after rollback-sync failure: %v", err)
+	}
+	if err := store.SetTip(genesis.Hash); err != nil {
+		t.Fatalf("SetTip after rollback-sync failure: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	replayed, err := Open(dir)
+	if err != nil {
+		t.Fatalf("replay after rollback-sync failure: %v", err)
+	}
+	defer replayed.Close()
+	if !replayed.HasBlock(genesis.Hash) || replayed.Tip() != genesis.Hash {
+		t.Fatal("replay did not recover later records after rollback-sync failure")
 	}
 }
 
