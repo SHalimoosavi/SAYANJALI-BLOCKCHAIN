@@ -57,11 +57,16 @@ func TestFatalStorageFailureIsNotPeerViolation(t *testing.T) {
 		return false, "storage", l02FatalP2PCause()
 	})
 	defer client.Close()
+	// Two prior minor violations leave the peer below the configured threshold.
+	// A fatal local storage failure must not add a third violation.
+	n.reputation.Violate(s.p.ID, s.p.Address, security.ViolationMinor, time.Now())
+	n.reputation.Violate(s.p.ID, s.p.Address, security.ViolationMinor, time.Now())
+	if !n.reputation.Allow(s.p.ID, time.Now()) {
+		t.Fatal("peer was unexpectedly quarantined before the fatal storage failure")
+	}
 	l02SendAndReadReject(t, client, wire)
-	state := n.reputation.Violate(s.p.ID, s.p.Address, security.ViolationMinor, time.Now())
-	state = n.reputation.Violate(s.p.ID, s.p.Address, security.ViolationMinor, time.Now())
-	if state != security.PeerGood {
-		t.Fatalf("peer reputation state = %v after two independent minor violations; fatal storage error was counted as peer misconduct", state)
+	if !n.reputation.Allow(s.p.ID, time.Now()) {
+		t.Fatal("fatal local storage failure added a peer violation and quarantined the peer")
 	}
 }
 
