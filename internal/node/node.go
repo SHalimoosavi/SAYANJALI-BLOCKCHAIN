@@ -367,8 +367,8 @@ func (n *Node) Stop() {
 func (n *Node) Done() <-chan struct{} { return n.done }
 
 // Healthy and Err are placeholders for the L-02 fail-stop contract.
-func (n *Node) Healthy() bool { return true }
-func (n *Node) Err() error { return nil }
+func (n *Node) Healthy() bool         { return true }
+func (n *Node) Err() error            { return nil }
 
 // AcceptBlock preserves chain acceptance while exposing a narrow test seam.
 func (n *Node) AcceptBlock(b *block.Block) (bool, string, error) {
