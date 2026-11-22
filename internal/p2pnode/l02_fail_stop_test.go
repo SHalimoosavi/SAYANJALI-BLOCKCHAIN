@@ -145,6 +145,7 @@ func TestSyncStopsAfterFatalFailure(t *testing.T) {
 		_, err = server.Write(response)
 		serverDone <- err
 	}()
+	go s.readLoop()
 	syncDone := make(chan struct{})
 	go func() { n.syncPeer(s); close(syncDone) }()
 	select {
