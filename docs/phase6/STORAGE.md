@@ -14,3 +14,8 @@ Startup replays every record, verifies CRCs and decodes every stored block. Any 
 The active tip is a separate durable record. This makes the acceptance operation crash-safe at the canonical-tip boundary: an interrupted write can leave an already-stored branch block without changing the previous active tip.
 
 No runtime databases, identities or journals are included in source ZIP deliveries.
+
+
+## Exclusive data-directory ownership
+
+Every `storage.Open` takes a nonblocking exclusive advisory lock on `<data-dir>/.syj.lock` before opening or replaying `ledger.journal`. A second process using the same directory fails to open the store with `data directory is already locked`. The lock is released by `Store.Close` and by the operating system when the holder process exits. The lock file is intentionally left in place; do not delete it while a node is running. Advisory locks may not be honored by network filesystems, so use a local filesystem for node data. The lock file is separate from the journal and does not change its format.

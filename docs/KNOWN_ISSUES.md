@@ -81,3 +81,14 @@ Do not merge a Go 1.27.1-based release after this finding without either upgradi
 - **Recovery:** A later open replays the journal and retries reconciliation after the storage fault is cleared. The regression test injects a failure before the underlying `SetTip` append, verifies the journal bytes are unchanged, then reopens and verifies the higher-work branch is durably selected.
 - **Important boundary:** The unchanged-journal assertion applies to the injected pre-append failure. A real journal write failure can leave an incomplete tail; storage rollback/replay recovery handles that separately. If rollback itself fails, the live Store is poisoned and must be closed and reopened.
 - **Protocol scope:** This is fail-closed startup error handling. It does not alter chain validity, cumulative-work calculation, consensus rules, wire format or protocol vectors.
+
+
+## Concurrent opens of one storage directory
+
+- **ID:** STORAGE-DIR-LOCK-001
+- **Severity:** High
+- **Status:** Confirmed on the pre-fix main revision; exclusive-lock remediation is implemented in PR #32.
+- **Location:** `internal/storage/storage.go`, `storage.Open`.
+- **Behavior:** `Open` acquires a nonblocking exclusive advisory lock on `.syj.lock` before opening or replaying `ledger.journal`. A second process receives `data directory is already locked`; `Close` releases the lock and the operating system releases it on process exit.
+- **Operational limit:** Advisory locks may not be honored by network filesystems. Use a local filesystem for node data.
+- **Protocol boundary:** The lock is separate from the journal; journal bytes and format, consensus behavior, wire format and protocol vectors are unchanged.
