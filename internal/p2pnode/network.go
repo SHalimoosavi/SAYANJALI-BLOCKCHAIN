@@ -165,7 +165,9 @@ func New(cfg Config, ch *chain.Chain, pool *mempool.Pool) *Network {
 	}
 }
 func (n *Network) accept(b *block.Block) (bool, string, error) {
-	if n.acceptBlock != nil { return n.acceptBlock(b) }
+	if n.acceptBlock != nil {
+		return n.acceptBlock(b)
+	}
 	return n.ch.Accept(b)
 }
 

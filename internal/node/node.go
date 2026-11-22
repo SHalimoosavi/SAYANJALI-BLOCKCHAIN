@@ -373,7 +373,9 @@ func (n *Node) Err() error { return nil }
 // AcceptBlock preserves chain acceptance while exposing a narrow test seam.
 func (n *Node) AcceptBlock(b *block.Block) (bool, string, error) {
 	if n.acceptFn == nil {
-		if n.chain == nil { return false, "", errors.New("node not started") }
+		if n.chain == nil {
+			return false, "", errors.New("node not started")
+		}
 		return n.chain.Accept(b)
 	}
 	return n.acceptFn(b)
