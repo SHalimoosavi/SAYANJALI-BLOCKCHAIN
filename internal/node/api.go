@@ -12,6 +12,7 @@ import (
 
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/codec"
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/security"
+	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/storage"
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/transaction"
 )
 
@@ -120,6 +121,10 @@ func (a *API) health(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(405)
 		return
 	}
+	if !a.n.Healthy() {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"ok": false, "error": a.n.Err().Error()})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "protocol_version": a.n.chain.ProtocolVersion()})
 }
 func (a *API) status(w http.ResponseWriter, r *http.Request) {
@@ -171,6 +176,10 @@ func (a *API) block(w http.ResponseWriter, r *http.Request) {
 }
 func (a *API) transactions(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
+		if !a.n.Healthy() {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": a.n.Err().Error()})
+			return
+		}
 		if !a.requireAuth(w, r) {
 			return
 		}
@@ -181,7 +190,11 @@ func (a *API) transactions(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if e := a.n.SubmitTransaction(tx); e != nil {
-			writeJSON(w, 400, map[string]string{"error": e.Error()})
+			if errors.Is(e, storage.ErrStoreFailed) || !a.n.Healthy() {
+				writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": e.Error()})
+			} else {
+				writeJSON(w, 400, map[string]string{"error": e.Error()})
+			}
 			return
 		}
 		a.n.net.BroadcastTransaction(tx)
@@ -205,6 +218,10 @@ func (a *API) transactions(w http.ResponseWriter, r *http.Request) {
 func (a *API) mine(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(405)
+		return
+	}
+	if !a.n.Healthy() {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": a.n.Err().Error()})
 		return
 	}
 	// The reward always goes to this node's own identity address. A
@@ -234,7 +251,11 @@ func (a *API) mine(w http.ResponseWriter, r *http.Request) {
 	}
 	ok, reason, e := a.n.AcceptBlock(b)
 	if e != nil || !ok {
-		writeJSON(w, 400, map[string]string{"error": errText(reason, e)})
+		if errors.Is(e, storage.ErrStoreFailed) || !a.n.Healthy() {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": errText(reason, e)})
+		} else {
+			writeJSON(w, 400, map[string]string{"error": errText(reason, e)})
+		}
 		return
 	}
 	ids := make([]string, 0)
@@ -254,6 +275,10 @@ func (a *API) mine(w http.ResponseWriter, r *http.Request) {
 func (a *API) shutdown(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(405)
+		return
+	}
+	if !a.n.Healthy() {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": a.n.Err().Error()})
 		return
 	}
 	writeJSON(w, 202, map[string]any{"stopping": true})

@@ -24,6 +24,7 @@ import (
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/mempool"
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/p2p"
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/security"
+	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/storage"
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/transaction"
 )
 
@@ -57,6 +58,8 @@ type Config struct {
 	TLSCAFile            string
 	TLSServerName        string
 	AcceptBlock          func(*block.Block) (bool, string, error)
+	Healthy              func() bool
+	SubmitTransaction    func(transaction.Transaction) error
 }
 type Network struct {
 	cfg        Config
@@ -76,6 +79,9 @@ type Network struct {
 	handshakesByIP    map[string]int
 	addressPolicy     security.AddressPolicy
 	acceptBlock       func(*block.Block) (bool, string, error)
+	acceptFailed      atomic.Bool
+	stopping          bool
+	syncPeerFn        func(*Session)
 }
 type Peer struct {
 	ID           string
@@ -164,11 +170,49 @@ func New(cfg Config, ch *chain.Chain, pool *mempool.Pool) *Network {
 		acceptBlock:    cfg.AcceptBlock,
 	}
 }
-func (n *Network) accept(b *block.Block) (bool, string, error) {
-	if n.acceptBlock != nil {
-		return n.acceptBlock(b)
+func (n *Network) healthy() bool {
+	if n.acceptFailed.Load() {
+		return false
 	}
-	return n.ch.Accept(b)
+	return n.cfg.Healthy == nil || n.cfg.Healthy()
+}
+
+func (n *Network) accept(b *block.Block) (bool, string, error) {
+	if !n.healthy() {
+		n.acceptFailed.Store(true)
+		return false, "storage", storage.ErrStoreFailed
+	}
+	var ok bool
+	var reason string
+	var err error
+	if n.acceptBlock != nil {
+		ok, reason, err = n.acceptBlock(b)
+	} else {
+		ok, reason, err = n.ch.Accept(b)
+	}
+	if errors.Is(err, storage.ErrStoreFailed) {
+		n.acceptFailed.Store(true)
+	}
+	return ok, reason, err
+}
+
+func (n *Network) startSyncPeer(s *Session) {
+	n.mu.Lock()
+	if n.stopping {
+		n.mu.Unlock()
+		return
+	}
+	n.wg.Add(1)
+	syncFn := n.syncPeerFn
+	n.mu.Unlock()
+	go func() {
+		defer n.wg.Done()
+		if syncFn != nil {
+			syncFn(s)
+			return
+		}
+		n.syncPeer(s)
+	}()
 }
 
 func (n *Network) recordReputationViolation(
@@ -323,18 +367,19 @@ func (n *Network) Start(ctx context.Context) error {
 	return nil
 }
 func (n *Network) Stop() {
+	n.mu.Lock()
+	n.stopping = true
+	for _, p := range n.peers {
+		_ = p.Conn.Close()
+	}
+	n.peers = make(map[string]*Peer)
+	n.mu.Unlock()
 	if n.cancel != nil {
 		n.cancel()
 	}
 	if n.ln != nil {
 		_ = n.ln.Close()
 	}
-	n.mu.Lock()
-	for _, p := range n.peers {
-		_ = p.Conn.Close()
-	}
-	n.peers = make(map[string]*Peer)
-	n.mu.Unlock()
 	n.wg.Wait()
 }
 func (n *Network) acceptLoop() {
@@ -822,6 +867,10 @@ func (s *Session) readLoop() {
 		}
 		if err := s.handle(f); err != nil {
 			s.n.cfg.Logger.Debug("peer message rejected", "peer", s.p.ID, "type", f.Type.String(), "error", err)
+			if errors.Is(err, storage.ErrStoreFailed) {
+				_ = s.writeReject(f.RequestID, p2p.RejectInvalidRequest, true, err.Error())
+				return
+			}
 			state := s.n.recordReputationViolation(
 				s.p.ID,
 				s.p.Address,
@@ -991,7 +1040,7 @@ func (s *Session) acceptBlock(data []byte) error {
 	ok, reason, e := s.n.accept(b)
 	if e != nil || !ok {
 		if reason == "unknown_ancestor" {
-			go s.n.syncPeer(s)
+			s.n.startSyncPeer(s)
 		}
 		return errOr(reason, e)
 	}
@@ -1024,6 +1073,10 @@ func (s *Session) acceptBlock(data []byte) error {
 	return nil
 }
 func (s *Session) acceptTx(data []byte) error {
+	if !s.n.healthy() {
+		s.n.acceptFailed.Store(true)
+		return storage.ErrStoreFailed
+	}
 	tx, e := codec.DecodeTransaction(data)
 	if e != nil {
 		return e
@@ -1031,7 +1084,14 @@ func (s *Session) acceptTx(data []byte) error {
 	if s.n.ch == nil {
 		return errors.New("chain unavailable")
 	}
-	if s.n.ch.UsesV2Rules() {
+	if s.n.cfg.SubmitTransaction != nil {
+		if err := s.n.cfg.SubmitTransaction(tx); err != nil {
+			if errors.Is(err, storage.ErrStoreFailed) {
+				s.n.acceptFailed.Store(true)
+			}
+			return err
+		}
+	} else if s.n.ch.UsesV2Rules() {
 		if s.n.cfg.V2Pool == nil {
 			return errors.New("V2 mempool is unavailable")
 		}
@@ -1143,7 +1203,7 @@ func (n *Network) syncPeer(s *Session) {
 				if e != nil {
 					return
 				}
-				if _, _, e = n.ch.Accept(b); e != nil {
+				if _, _, e = n.accept(b); e != nil {
 					return
 				}
 			}

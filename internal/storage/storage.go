@@ -17,6 +17,13 @@ import (
 
 var ErrStoreFailed = errors.New("store failed")
 
+func failedStoreError(cause error) error {
+	if cause == nil {
+		cause = ErrStoreFailed
+	}
+	return fmt.Errorf("store is failed after journal durability failure: %w", errors.Join(ErrStoreFailed, cause))
+}
+
 const (
 	magic                        = "SYJDB001"
 	version               uint16 = 1
@@ -180,7 +187,7 @@ func (s *Store) truncateTail(offset int64) error {
 
 func (s *Store) appendRecord(typ byte, payload []byte) error {
 	if s.failed != nil {
-		return fmt.Errorf("store is failed after journal durability failure: %w", s.failed)
+		return failedStoreError(s.failed)
 	}
 	if s.file == nil {
 		return errors.New("store is closed")
@@ -253,7 +260,7 @@ func (s *Store) SetTip(hash string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.failed != nil {
-		return fmt.Errorf("store is failed after journal durability failure: %w", s.failed)
+		return failedStoreError(s.failed)
 	}
 	if s.file == nil {
 		return errors.New("store is closed")

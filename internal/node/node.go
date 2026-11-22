@@ -136,8 +136,11 @@ type Node struct {
 	net        *p2pnode.Network
 	ctx        context.Context
 	cancel     context.CancelFunc
-	stopOnce   sync.Once
-	done       chan struct{}
+	stopOnce      sync.Once
+	fatalStopOnce sync.Once
+	healthMu     sync.Mutex
+	fatalErr     error
+	done         chan struct{}
 	running    atomic.Bool
 	clock      clock.Clock
 	peerMedian clock.PeerMedian
@@ -336,7 +339,7 @@ func (n *Node) Start(ctx context.Context) (retErr error) {
 		n.v2pool = mempool.NewV2(n.cfg.MempoolMax)
 	}
 	gHash := g.Hash
-	n.net = p2pnode.New(p2pnode.Config{ProtocolVersion: n.cfg.ProtocolVersion, NetworkName: n.cfg.NetworkName, GenesisHash: gHash, NodeID: id.NodeID, PublicKeyHex: id.PublicKeyHex, V2Pool: n.v2pool, AdvertisedAddress: n.cfg.AdvertisedAddress, ListenAddress: n.cfg.ListenAddress, Seeds: n.cfg.Seeds, MaxPeers: n.cfg.MaxPeers, Logger: n.log, Identity: *id, UseTLS: n.cfg.P2PUseTLS, TLSCertFile: n.cfg.P2PTLSCertFile, TLSKeyFile: n.cfg.P2PTLSKeyFile, TLSCAFile: n.cfg.P2PTLSCAFile, TLSServerName: n.cfg.P2PTLSServerName, AcceptBlock: n.AcceptBlock}, ch, n.pool)
+	n.net = p2pnode.New(p2pnode.Config{ProtocolVersion: n.cfg.ProtocolVersion, NetworkName: n.cfg.NetworkName, GenesisHash: gHash, NodeID: id.NodeID, PublicKeyHex: id.PublicKeyHex, V2Pool: n.v2pool, AdvertisedAddress: n.cfg.AdvertisedAddress, ListenAddress: n.cfg.ListenAddress, Seeds: n.cfg.Seeds, MaxPeers: n.cfg.MaxPeers, Logger: n.log, Identity: *id, UseTLS: n.cfg.P2PUseTLS, TLSCertFile: n.cfg.P2PTLSCertFile, TLSKeyFile: n.cfg.P2PTLSKeyFile, TLSCAFile: n.cfg.P2PTLSCAFile, TLSServerName: n.cfg.P2PTLSServerName, AcceptBlock: n.AcceptBlock, Healthy: n.Healthy, SubmitTransaction: n.SubmitTransaction}, ch, n.pool)
 	n.ctx, n.cancel = context.WithCancel(ctx)
 	if err := n.net.Start(n.ctx); err != nil {
 		return err
@@ -366,19 +369,56 @@ func (n *Node) Stop() {
 }
 func (n *Node) Done() <-chan struct{} { return n.done }
 
-// Healthy and Err are placeholders for the L-02 fail-stop contract.
-func (n *Node) Healthy() bool { return true }
-func (n *Node) Err() error    { return nil }
+func (n *Node) Healthy() bool {
+	n.healthMu.Lock()
+	defer n.healthMu.Unlock()
+	return n.fatalErr == nil
+}
 
-// AcceptBlock preserves chain acceptance while exposing a narrow test seam.
+func (n *Node) Err() error {
+	n.healthMu.Lock()
+	defer n.healthMu.Unlock()
+	return n.fatalErr
+}
+
+func (n *Node) markFatal(err error) {
+	if !errors.Is(err, storage.ErrStoreFailed) {
+		return
+	}
+	n.healthMu.Lock()
+	if n.fatalErr == nil {
+		n.fatalErr = err
+	}
+	n.healthMu.Unlock()
+	n.fatalStopOnce.Do(func() { go n.Stop() })
+}
+
 func (n *Node) AcceptBlock(b *block.Block) (bool, string, error) {
-	if n.acceptFn == nil {
-		if n.chain == nil {
+	n.healthMu.Lock()
+	if n.fatalErr != nil {
+		err := n.fatalErr
+		n.healthMu.Unlock()
+		return false, "storage", err
+	}
+	accept, ch := n.acceptFn, n.chain
+	n.healthMu.Unlock()
+	if accept == nil {
+		if ch == nil {
 			return false, "", errors.New("node not started")
 		}
-		return n.chain.Accept(b)
+		accept = ch.Accept
 	}
-	return n.acceptFn(b)
+	ok, reason, err := accept(b)
+	if errors.Is(err, storage.ErrStoreFailed) {
+		n.markFatal(err)
+	}
+	n.healthMu.Lock()
+	fatalErr := n.fatalErr
+	n.healthMu.Unlock()
+	if fatalErr != nil {
+		return false, "storage", fatalErr
+	}
+	return ok, reason, err
 }
 func (n *Node) Config() Config        { return n.cfg }
 func (n *Node) Identity() identity.Identity {
@@ -392,6 +432,11 @@ func (n *Node) Mempool() *mempool.Pool     { return n.pool }
 func (n *Node) V2Mempool() *mempool.V2Pool { return n.v2pool }
 func (n *Node) Network() *p2pnode.Network  { return n.net }
 func (n *Node) SubmitTransaction(tx transaction.Transaction) error {
+	n.healthMu.Lock()
+	defer n.healthMu.Unlock()
+	if n.fatalErr != nil {
+		return n.fatalErr
+	}
 	if n.chain == nil || n.pool == nil {
 		return errors.New("node not started")
 	}

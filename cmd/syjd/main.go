@@ -92,6 +92,9 @@ func runStartWith(ctx context.Context, cfg node.Config, n startNode, startAPI fu
 	}
 	_ = api.Shutdown(context.Background())
 	n.Stop()
+	if err := n.Err(); err != nil {
+		return err
+	}
 	return nil
 }
 
