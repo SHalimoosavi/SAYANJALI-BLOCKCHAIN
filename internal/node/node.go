@@ -126,25 +126,25 @@ func SaveDefaultConfig(path string, c Config) error {
 }
 
 type Node struct {
-	cfg        Config
-	log        *slog.Logger
-	id         *identity.Identity
-	store      *storage.Store
-	chain      *chain.Chain
-	pool       *mempool.Pool
-	v2pool     *mempool.V2Pool
-	net        *p2pnode.Network
-	ctx        context.Context
-	cancel     context.CancelFunc
+	cfg           Config
+	log           *slog.Logger
+	id            *identity.Identity
+	store         *storage.Store
+	chain         *chain.Chain
+	pool          *mempool.Pool
+	v2pool        *mempool.V2Pool
+	net           *p2pnode.Network
+	ctx           context.Context
+	cancel        context.CancelFunc
 	stopOnce      sync.Once
 	fatalStopOnce sync.Once
 	healthMu      sync.Mutex
 	fatalErr      error
 	done          chan struct{}
-	running    atomic.Bool
-	clock      clock.Clock
-	peerMedian clock.PeerMedian
-	acceptFn   func(*block.Block) (bool, string, error)
+	running       atomic.Bool
+	clock         clock.Clock
+	peerMedian    clock.PeerMedian
+	acceptFn      func(*block.Block) (bool, string, error)
 }
 
 func (c Config) ValidateTransport() error {

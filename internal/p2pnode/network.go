@@ -59,7 +59,7 @@ type Config struct {
 	TLSServerName        string
 	AcceptBlock          func(*block.Block) (bool, string, error)
 	Healthy              func() bool
-	SubmitTransaction    func(transaction.Transaction) error
+	SubmitTransaction   func(transaction.Transaction) error
 }
 type Network struct {
 	cfg        Config

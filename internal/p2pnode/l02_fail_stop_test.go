@@ -109,18 +109,39 @@ func TestSyncStopsAfterFatalFailure(t *testing.T) {
 	go func() {
 		genesis := n.ch.Tip()
 		header, err := codec.HeaderBytes(genesis.Header)
-		if err != nil { serverDone <- err; return }
+		if err != nil {
+			serverDone <- err
+			return
+		}
 		f, err := p2p.ReadFrame(server)
-		if err != nil { serverDone <- err; return }
+		if err != nil {
+			serverDone <- err
+			return
+		}
 		response, err := p2p.EncodeHeaders(p2p.Headers{Items: [][]byte{header}}, f.RequestID)
-		if err != nil { serverDone <- err; return }
-		if _, err = server.Write(response); err != nil { serverDone <- err; return }
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		if _, err = server.Write(response); err != nil {
+			serverDone <- err
+			return
+		}
 		f, err = p2p.ReadFrame(server)
-		if err != nil { serverDone <- err; return }
+		if err != nil {
+			serverDone <- err
+			return
+		}
 		rawBlock, err := codec.BlockBytes(genesis)
-		if err != nil { serverDone <- err; return }
+		if err != nil {
+			serverDone <- err
+			return
+		}
 		response, err = p2p.EncodeBlocks(p2p.Blocks{Items: [][]byte{rawBlock}}, f.RequestID)
-		if err != nil { serverDone <- err; return }
+		if err != nil {
+			serverDone <- err
+			return
+		}
 		_, err = server.Write(response)
 		serverDone <- err
 	}()
@@ -131,8 +152,12 @@ func TestSyncStopsAfterFatalFailure(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("syncPeer did not stop after fatal storage failure")
 	}
-	if err := <-serverDone; err != nil { t.Fatalf("sync test peer: %v", err) }
-	if got := calls.Load(); got != 1 { t.Fatalf("sync acceptance calls = %d, want 1 before fail-stop", got) }
+	if err := <-serverDone; err != nil {
+		t.Fatalf("sync test peer: %v", err)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("sync acceptance calls = %d, want 1 before fail-stop", got)
+	}
 }
 
 // TestUnknownAncestorSyncGoroutineStopsOnShutdown has NO RED EVIDENCE.
@@ -150,8 +175,12 @@ func TestUnknownAncestorSyncGoroutineStopsOnShutdown(t *testing.T) {
 	defer client.Close()
 	s := &Session{n: n, p: &Peer{ID: "l02-unknown-ancestor", Address: "127.0.0.1:39003", Conn: client}, conn: client, tracker: p2p.NewRequestTracker(), pending: make(map[uint64]chan p2p.Frame), closed: make(chan struct{})}
 	raw, err := codec.BlockBytes(n.ch.Tip())
-	if err != nil { t.Fatal(err) }
-	if err := s.acceptBlock(raw); err == nil { t.Fatal("unknown ancestor acceptance unexpectedly succeeded") }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.acceptBlock(raw); err == nil {
+		t.Fatal("unknown ancestor acceptance unexpectedly succeeded")
+	}
 	select {
 	case <-started:
 	case <-time.After(2 * time.Second):
