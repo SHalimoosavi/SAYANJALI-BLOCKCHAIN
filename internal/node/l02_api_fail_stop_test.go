@@ -100,9 +100,23 @@ func TestMutatingEndpointsNeverSucceedAfterUnhealthy(t *testing.T) {
 // TestConcurrentMineCannotCommitAfterFatalFlip deterministically holds an
 // in-flight mining acceptance while another request marks the node failed.
 func TestConcurrentMineCannotCommitAfterFatalFlip(t *testing.T) {
+	for i := 0; i < 20; i++ {
+		t.Run("iteration", func(t *testing.T) {
+			testConcurrentMineCannotCommitAfterFatalFlip(t)
+		})
+	}
+}
+
+func testConcurrentMineCannotCommitAfterFatalFlip(t *testing.T) {
 	n := newL02RunningNode(t, t.TempDir())
 	entered := make(chan struct{})
 	release := make(chan struct{})
+	released := false
+	defer func() {
+		if !released {
+			close(release)
+		}
+	}()
 	var calls atomic.Int32
 	n.acceptFn = func(*block.Block) (bool, string, error) {
 		switch calls.Add(1) {

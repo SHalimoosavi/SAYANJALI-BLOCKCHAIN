@@ -99,6 +99,7 @@ func TestSyncStopsAfterFatalFailure(t *testing.T) {
 	server, client := net.Pipe()
 	defer server.Close()
 	defer client.Close()
+	_ = server.SetDeadline(time.Now().Add(3 * time.Second))
 	s := &Session{n: n, p: &Peer{ID: "l02-sync-peer", Address: "127.0.0.1:39002", Conn: client}, conn: client, tracker: p2p.NewRequestTracker(), pending: make(map[uint64]chan p2p.Frame), closed: make(chan struct{})}
 	var calls atomic.Int32
 	n.acceptBlock = func(*block.Block) (bool, string, error) {
@@ -145,16 +146,34 @@ func TestSyncStopsAfterFatalFailure(t *testing.T) {
 		_, err = server.Write(response)
 		serverDone <- err
 	}()
-	go s.readLoop()
+	readLoopDone := make(chan struct{})
+	go func() {
+		s.readLoop()
+		close(readLoopDone)
+	}()
 	syncDone := make(chan struct{})
-	go func() { n.syncPeer(s); close(syncDone) }()
+	go func() {
+		n.syncPeer(s)
+		close(syncDone)
+	}()
 	select {
 	case <-syncDone:
 	case <-time.After(2 * time.Second):
 		t.Fatal("syncPeer did not stop after fatal storage failure")
 	}
-	if err := <-serverDone; err != nil {
-		t.Fatalf("sync test peer: %v", err)
+	select {
+	case err := <-serverDone:
+		if err != nil {
+			t.Fatalf("sync test peer: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("sync test peer did not finish its two request/response exchanges")
+	}
+	_ = client.Close()
+	select {
+	case <-readLoopDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("sync session read loop did not exit after client close")
 	}
 	if got := calls.Load(); got != 1 {
 		t.Fatalf("sync acceptance calls = %d, want 1 before fail-stop", got)
@@ -167,7 +186,11 @@ func TestUnknownAncestorSyncGoroutineStopsOnShutdown(t *testing.T) {
 	defer closeN()
 	started := make(chan struct{})
 	finished := make(chan struct{})
-	n.syncPeerFn = func(*Session) { close(started); <-n.ctx.Done(); close(finished) }
+	n.syncPeerFn = func(*Session) {
+		close(started)
+		<-n.ctx.Done()
+		close(finished)
+	}
 	n.acceptBlock = func(*block.Block) (bool, string, error) {
 		return false, "unknown_ancestor", errors.New("injected unknown ancestor")
 	}
@@ -187,10 +210,23 @@ func TestUnknownAncestorSyncGoroutineStopsOnShutdown(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("unknown-ancestor sync worker did not start")
 	}
-	n.Stop()
+	stopDone := make(chan struct{})
+	go func() {
+		n.Stop()
+		close(stopDone)
+	}()
+	select {
+	case <-stopDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Network.Stop did not finish after canceling unknown-ancestor sync worker")
+	}
 	select {
 	case <-finished:
-	default:
-		t.Fatal("Network.Stop returned before unknown-ancestor sync worker exited")
+	case <-time.After(2 * time.Second):
+		t.Fatal("unknown-ancestor sync worker did not exit on shutdown")
+	}
+	n.startSyncPeer(s)
+	if got := n.stopping; !got {
+		t.Fatal("Network.Stop did not set stopping flag")
 	}
 }
