@@ -91,7 +91,6 @@ func TestNewBlockAfterFatalFailureNotAcceptedAgain(t *testing.T) {
 	}
 }
 
-
 // TestSyncStopsAfterFatalFailure exercises the syncPeer block-acceptance path.
 // NO RED EVIDENCE: syncPeer already returns on any Accept error.
 func TestSyncStopsAfterFatalFailure(t *testing.T) {

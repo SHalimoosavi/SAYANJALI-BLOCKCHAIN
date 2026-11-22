@@ -97,7 +97,6 @@ func TestMutatingEndpointsNeverSucceedAfterUnhealthy(t *testing.T) {
 	}
 }
 
-
 // TestConcurrentMineCannotCommitAfterFatalFlip deterministically holds an
 // in-flight mining acceptance while another request marks the node failed.
 func TestConcurrentMineCannotCommitAfterFatalFlip(t *testing.T) {

@@ -138,9 +138,9 @@ type Node struct {
 	cancel     context.CancelFunc
 	stopOnce      sync.Once
 	fatalStopOnce sync.Once
-	healthMu     sync.Mutex
-	fatalErr     error
-	done         chan struct{}
+	healthMu      sync.Mutex
+	fatalErr      error
+	done          chan struct{}
 	running    atomic.Bool
 	clock      clock.Clock
 	peerMedian clock.PeerMedian

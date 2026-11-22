@@ -202,7 +202,7 @@ func (s *Store) appendRecord(typ byte, payload []byte) error {
 	rollback := func(cause error) error {
 		poison := func(context string, rollbackErr error) error {
 			s.failed = fmt.Errorf("%s: %w", context, rollbackErr)
-			return errors.Join(cause, fmt.Errorf("store is failed after journal durability failure: %w", s.failed))
+			return errors.Join(cause, failedStoreError(s.failed))
 		}
 		if truncateErr := s.file.Truncate(start); truncateErr != nil {
 			return poison("rollback incomplete journal record", truncateErr)
@@ -236,7 +236,7 @@ func (s *Store) appendRecord(typ byte, payload []byte) error {
 		if s.failed == nil {
 			s.failed = fmt.Errorf("append journal sync failed: %w", err)
 		}
-		return errors.Join(rollbackErr, fmt.Errorf("store is failed after journal durability failure: %w", s.failed))
+		return errors.Join(rollbackErr, failedStoreError(s.failed))
 	}
 	return nil
 }
