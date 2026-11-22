@@ -155,6 +155,7 @@ func testConcurrentMineCannotCommitAfterFatalFlip(t *testing.T) {
 		t.Fatalf("Err() = %v, want storage sentinel before releasing in-flight mine", n.Err())
 	}
 	close(release)
+	released = true
 	select {
 	case status := <-mineDone:
 		if status != http.StatusServiceUnavailable {

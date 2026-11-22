@@ -28,6 +28,7 @@ func l02PipeSession(t *testing.T, n *Network, accept func(*block.Block) (bool, s
 	n.mu.Unlock()
 	n.acceptBlock = accept
 	s := &Session{n: n, p: peer, conn: server, closed: make(chan struct{}), pending: make(map[uint64]chan p2p.Frame)}
+	peer.Session = s
 	genesis := n.ch.Tip()
 	raw, err := codec.BlockBytes(genesis)
 	if err != nil {
@@ -74,17 +75,37 @@ func TestNewBlockAfterFatalFailureNotAcceptedAgain(t *testing.T) {
 	n, closeN := testNetwork(t, nil)
 	defer closeN()
 	var calls atomic.Int32
+	firstProcessed := make(chan struct{}, 2)
 	_, client, wire := l02PipeSession(t, n, func(*block.Block) (bool, string, error) {
 		calls.Add(1)
+		firstProcessed <- struct{}{}
 		return false, "storage", l02FatalP2PCause()
 	})
 	defer client.Close()
-	l02SendAndReadReject(t, client, wire)
+
+	_ = client.SetWriteDeadline(time.Now().Add(5 * time.Second))
+	if _, err := client.Write(wire); err != nil {
+		t.Fatalf("write first NEW_BLOCK: %v", err)
+	}
+	select {
+	case <-firstProcessed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("first NEW_BLOCK was not passed to the accept callback within 5 seconds")
+	}
+	_ = client.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if _, err := p2p.ReadFrame(client); err != nil {
+		t.Fatalf("read first NEW_BLOCK rejection: %v", err)
+	}
+
+	_ = client.SetWriteDeadline(time.Now().Add(2 * time.Second))
 	if _, err := client.Write(wire); err == nil {
-		_, _ = p2p.ReadFrame(client)
+		_ = client.SetReadDeadline(time.Now().Add(2 * time.Second))
+		if _, readErr := p2p.ReadFrame(client); readErr == nil {
+			t.Fatal("node answered the second NEW_BLOCK after fatal failure")
+		}
 	}
 	if got := calls.Load(); got != 1 {
-		t.Fatalf("accept callback calls = %d after fatal failure, want 1", got)
+		t.Fatalf("accept callback calls = %d after fatal failure, want exactly 1", got)
 	}
 	if !errors.Is(l02FatalP2PCause(), storage.ErrStoreFailed) {
 		t.Fatal("test fatal cause does not wrap storage sentinel")

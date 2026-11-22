@@ -420,7 +420,7 @@ func (n *Node) AcceptBlock(b *block.Block) (bool, string, error) {
 	}
 	return ok, reason, err
 }
-func (n *Node) Config() Config        { return n.cfg }
+func (n *Node) Config() Config { return n.cfg }
 func (n *Node) Identity() identity.Identity {
 	if n.id == nil {
 		return identity.Identity{}

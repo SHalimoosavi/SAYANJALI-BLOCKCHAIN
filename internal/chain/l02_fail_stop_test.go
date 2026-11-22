@@ -29,7 +29,6 @@ func TestAcceptOrdinaryRejectionsDoNotWrapSentinel(t *testing.T) {
 	}
 }
 
-
 // l02FailSyncFile injects one deterministic journal fsync failure while
 // preserving the real file's remaining behavior. It is installed only in
 // tests by replacing Store.file through reflection because that field and the
