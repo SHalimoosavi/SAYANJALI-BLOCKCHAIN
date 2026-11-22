@@ -56,6 +56,7 @@ type Config struct {
 	TLSKeyFile           string
 	TLSCAFile            string
 	TLSServerName        string
+	AcceptBlock          func(*block.Block) (bool, string, error)
 }
 type Network struct {
 	cfg        Config
@@ -74,6 +75,7 @@ type Network struct {
 	pendingHandshakes int
 	handshakesByIP    map[string]int
 	addressPolicy     security.AddressPolicy
+	acceptBlock       func(*block.Block) (bool, string, error)
 }
 type Peer struct {
 	ID           string
@@ -159,8 +161,14 @@ func New(cfg Config, ch *chain.Chain, pool *mempool.Pool) *Network {
 		reputation:     reputation,
 		handshakesByIP: make(map[string]int),
 		addressPolicy:  policy,
+		acceptBlock:    cfg.AcceptBlock,
 	}
 }
+func (n *Network) accept(b *block.Block) (bool, string, error) {
+	if n.acceptBlock != nil { return n.acceptBlock(b) }
+	return n.ch.Accept(b)
+}
+
 func (n *Network) recordReputationViolation(
 	peerID, address string,
 	severity security.ViolationSeverity,
@@ -978,7 +986,7 @@ func (s *Session) acceptBlock(data []byte) error {
 	if e != nil {
 		return e
 	}
-	ok, reason, e := s.n.ch.Accept(b)
+	ok, reason, e := s.n.accept(b)
 	if e != nil || !ok {
 		if reason == "unknown_ancestor" {
 			go s.n.syncPeer(s)

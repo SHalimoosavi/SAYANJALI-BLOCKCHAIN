@@ -141,6 +141,7 @@ type Node struct {
 	running    atomic.Bool
 	clock      clock.Clock
 	peerMedian clock.PeerMedian
+	acceptFn   func(*block.Block) (bool, string, error)
 }
 
 func (c Config) ValidateTransport() error {
@@ -322,6 +323,7 @@ func (n *Node) Start(ctx context.Context) (retErr error) {
 		return errors.New("genesis initialization failure")
 	}
 	n.chain = ch
+	n.acceptFn = ch.Accept
 	n.chain.SetClock(n.clock)
 	if n.cfg.ProtocolVersion >= 3 && n.cfg.V3SoloBootstrapMining {
 		n.log.Warn("WARNING: V3 SOLO/BOOTSTRAP MINING MODE ENABLED",
@@ -334,7 +336,7 @@ func (n *Node) Start(ctx context.Context) (retErr error) {
 		n.v2pool = mempool.NewV2(n.cfg.MempoolMax)
 	}
 	gHash := g.Hash
-	n.net = p2pnode.New(p2pnode.Config{ProtocolVersion: n.cfg.ProtocolVersion, NetworkName: n.cfg.NetworkName, GenesisHash: gHash, NodeID: id.NodeID, PublicKeyHex: id.PublicKeyHex, V2Pool: n.v2pool, AdvertisedAddress: n.cfg.AdvertisedAddress, ListenAddress: n.cfg.ListenAddress, Seeds: n.cfg.Seeds, MaxPeers: n.cfg.MaxPeers, Logger: n.log, Identity: *id, UseTLS: n.cfg.P2PUseTLS, TLSCertFile: n.cfg.P2PTLSCertFile, TLSKeyFile: n.cfg.P2PTLSKeyFile, TLSCAFile: n.cfg.P2PTLSCAFile, TLSServerName: n.cfg.P2PTLSServerName}, ch, n.pool)
+	n.net = p2pnode.New(p2pnode.Config{ProtocolVersion: n.cfg.ProtocolVersion, NetworkName: n.cfg.NetworkName, GenesisHash: gHash, NodeID: id.NodeID, PublicKeyHex: id.PublicKeyHex, V2Pool: n.v2pool, AdvertisedAddress: n.cfg.AdvertisedAddress, ListenAddress: n.cfg.ListenAddress, Seeds: n.cfg.Seeds, MaxPeers: n.cfg.MaxPeers, Logger: n.log, Identity: *id, UseTLS: n.cfg.P2PUseTLS, TLSCertFile: n.cfg.P2PTLSCertFile, TLSKeyFile: n.cfg.P2PTLSKeyFile, TLSCAFile: n.cfg.P2PTLSCAFile, TLSServerName: n.cfg.P2PTLSServerName, AcceptBlock: n.AcceptBlock}, ch, n.pool)
 	n.ctx, n.cancel = context.WithCancel(ctx)
 	if err := n.net.Start(n.ctx); err != nil {
 		return err
@@ -363,6 +365,19 @@ func (n *Node) Stop() {
 	})
 }
 func (n *Node) Done() <-chan struct{} { return n.done }
+
+// Healthy and Err are placeholders for the L-02 fail-stop contract.
+func (n *Node) Healthy() bool { return true }
+func (n *Node) Err() error { return nil }
+
+// AcceptBlock preserves chain acceptance while exposing a narrow test seam.
+func (n *Node) AcceptBlock(b *block.Block) (bool, string, error) {
+	if n.acceptFn == nil {
+		if n.chain == nil { return false, "", errors.New("node not started") }
+		return n.chain.Accept(b)
+	}
+	return n.acceptFn(b)
+}
 func (n *Node) Config() Config        { return n.cfg }
 func (n *Node) Identity() identity.Identity {
 	if n.id == nil {

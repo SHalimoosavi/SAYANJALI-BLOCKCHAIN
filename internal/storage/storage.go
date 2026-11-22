@@ -15,6 +15,8 @@ import (
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/codec"
 )
 
+var ErrStoreFailed = errors.New("store failed")
+
 const (
 	magic                        = "SYJDB001"
 	version               uint16 = 1

@@ -232,7 +232,7 @@ func (a *API) mine(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]string{"error": e.Error()})
 		return
 	}
-	ok, reason, e := a.n.chain.Accept(b)
+	ok, reason, e := a.n.AcceptBlock(b)
 	if e != nil || !ok {
 		writeJSON(w, 400, map[string]string{"error": errText(reason, e)})
 		return
