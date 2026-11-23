@@ -53,6 +53,51 @@ func apiBaseURL(cfg node.Config) string {
 	return scheme + "://" + cfg.APIListenAddress
 }
 
+type startNode interface {
+	Start(context.Context) error
+	Done() <-chan struct{}
+	Err() error
+	Stop()
+	ServeAPI() *http.Server
+	Status() map[string]any
+}
+
+func runStart(ctx context.Context, cfg node.Config, n startNode) error {
+	return runStartWith(ctx, cfg, n, func(api *http.Server) {
+		go func() {
+			var err error
+			if cfg.APIUseTLS {
+				err = api.ListenAndServeTLS(cfg.APITLSCertFile, cfg.APITLSKeyFile)
+			} else {
+				err = api.ListenAndServe()
+			}
+			if err != nil && err != http.ErrServerClosed {
+				n.Status()
+			}
+		}()
+	})
+}
+
+func runStartWith(ctx context.Context, cfg node.Config, n startNode, startAPI func(*http.Server)) error {
+	if err := n.Start(ctx); err != nil {
+		return err
+	}
+	api := n.ServeAPI()
+	if startAPI != nil {
+		startAPI(api)
+	}
+	select {
+	case <-ctx.Done():
+	case <-n.Done():
+	}
+	_ = api.Shutdown(context.Background())
+	n.Stop()
+	if err := n.Err(); err != nil {
+		return err
+	}
+	return nil
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		usage()
@@ -93,27 +138,9 @@ func main() {
 		n := node.New(cfg)
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
-		if err := n.Start(ctx); err != nil {
+		if err := runStart(ctx, cfg, n); err != nil {
 			fatal(err)
 		}
-		api := n.ServeAPI()
-		go func() {
-			var err error
-			if cfg.APIUseTLS {
-				err = api.ListenAndServeTLS(cfg.APITLSCertFile, cfg.APITLSKeyFile)
-			} else {
-				err = api.ListenAndServe()
-			}
-			if err != nil && err != http.ErrServerClosed {
-				n.Status()
-			}
-		}()
-		select {
-		case <-ctx.Done():
-		case <-n.Done():
-		}
-		_ = api.Shutdown(context.Background())
-		n.Stop()
 	case "stop":
 		dir := defaultDir
 		if len(os.Args) > 2 {
@@ -191,7 +218,7 @@ func main() {
 		if err != nil {
 			fatal(err)
 		}
-		resp, err := apiHTTPClient.Get(apiBaseURL(cfg) + "/peers") // #nosec G704 -- destination is the locally loaded node API configuration.
+		resp, err := apiHTTPClient.Get(apiBaseURL(cfg) + "/peers") // #nosec G704 -- destination is the locally loaded SYJ node API endpoint.
 		if err != nil {
 			fatal(err)
 		}
@@ -209,7 +236,9 @@ func main() {
 		os.Exit(2)
 	}
 }
+
 func usage() {
 	fmt.Println("syjd init [data-dir]\nsyjd start [data-dir]\nsyjd stop [data-dir]\nsyjd status [data-dir]\nsyjd peers [data-dir]\nsyjd mine [data-dir]")
 }
+
 func fatal(e error) { fmt.Fprintln(os.Stderr, "error:", e); os.Exit(1) }

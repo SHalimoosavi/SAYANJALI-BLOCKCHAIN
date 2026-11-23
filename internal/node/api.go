@@ -12,8 +12,11 @@ import (
 
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/codec"
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/security"
+	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/storage"
 	"github.com/SHalimoosavi/SAYANJALI-BLOCKCHAIN/internal/transaction"
 )
+
+const safeStorageFailureMessage = "storage failure: the node stopped to protect data integrity"
 
 type API struct {
 	n              *Node
@@ -120,11 +123,22 @@ func (a *API) health(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(405)
 		return
 	}
+	if !a.n.Healthy() {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"ok": false, "error": safeStorageFailureMessage})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "protocol_version": a.n.chain.ProtocolVersion()})
 }
 func (a *API) status(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.WriteHeader(405)
+		return
+	}
+	if !a.n.Healthy() {
+		status := a.n.Status()
+		status["healthy"] = false
+		status["failure_reason"] = safeStorageFailureMessage
+		writeJSON(w, http.StatusServiceUnavailable, status)
 		return
 	}
 	writeJSON(w, 200, a.n.Status())
@@ -171,6 +185,10 @@ func (a *API) block(w http.ResponseWriter, r *http.Request) {
 }
 func (a *API) transactions(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
+		if !a.n.Healthy() {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": safeStorageFailureMessage})
+			return
+		}
 		if !a.requireAuth(w, r) {
 			return
 		}
@@ -181,7 +199,11 @@ func (a *API) transactions(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if e := a.n.SubmitTransaction(tx); e != nil {
-			writeJSON(w, 400, map[string]string{"error": e.Error()})
+			if errors.Is(e, storage.ErrStoreFailed) || !a.n.Healthy() {
+				writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": safeStorageFailureMessage})
+			} else {
+				writeJSON(w, 400, map[string]string{"error": e.Error()})
+			}
 			return
 		}
 		a.n.net.BroadcastTransaction(tx)
@@ -205,6 +227,10 @@ func (a *API) transactions(w http.ResponseWriter, r *http.Request) {
 func (a *API) mine(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(405)
+		return
+	}
+	if !a.n.Healthy() {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": safeStorageFailureMessage})
 		return
 	}
 	// The reward always goes to this node's own identity address. A
@@ -232,9 +258,15 @@ func (a *API) mine(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]string{"error": e.Error()})
 		return
 	}
-	ok, reason, e := a.n.chain.Accept(b)
+	ok, reason, e := a.n.AcceptBlock(b)
 	if e != nil || !ok {
-		writeJSON(w, 400, map[string]string{"error": errText(reason, e)})
+		if errors.Is(e, storage.ErrStoreFailed) || !a.n.Healthy() {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": safeStorageFailureMessage})
+		} else if e != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "block acceptance failed"})
+		} else {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": errText(reason)})
+		}
 		return
 	}
 	ids := make([]string, 0)
@@ -254,6 +286,10 @@ func (a *API) mine(w http.ResponseWriter, r *http.Request) {
 func (a *API) shutdown(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(405)
+		return
+	}
+	if !a.n.Healthy() {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": safeStorageFailureMessage})
 		return
 	}
 	writeJSON(w, 202, map[string]any{"stopping": true})
@@ -279,14 +315,11 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
 }
-func errText(reason string, e error) string {
-	if e != nil {
-		return e.Error()
-	}
+func errText(reason string) string {
 	if reason != "" {
 		return reason
 	}
-	return errors.New("operation failed").Error()
+	return "operation failed"
 }
 
 // APIUsesTLS reports whether the configured API must be served over HTTPS.
