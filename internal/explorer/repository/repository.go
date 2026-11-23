@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"math"
 	"strconv"
 	"strings"
 
@@ -134,9 +133,6 @@ func (r *Repository) InsertBlock(ctx context.Context, b model.Block) error {
 	}
 	if b.Nonce > model.MaxSQLiteInteger {
 		return fmt.Errorf("block nonce %d exceeds SQLite INTEGER range", b.Nonce)
-	}
-	if len(b.Transactions) > math.MaxInt64 {
-		return errors.New("transaction count exceeds SQLite INTEGER range")
 	}
 
 	txCount, err := distinctTransactionCount(b.Transactions)
@@ -395,10 +391,6 @@ func distinctTransactionCount(txs []model.Transaction) (int, error) {
 		}
 
 		seen[identity] = struct{}{}
-	}
-
-	if len(seen) > math.MaxInt64 {
-		return 0, errors.New("distinct transaction count exceeds SQLite INTEGER range")
 	}
 
 	return len(seen), nil
