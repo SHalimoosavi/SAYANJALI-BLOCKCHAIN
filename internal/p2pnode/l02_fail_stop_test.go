@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"sync/atomic"
+	"strings"
 	"testing"
 	"time"
 
@@ -249,5 +250,34 @@ func TestUnknownAncestorSyncGoroutineStopsOnShutdown(t *testing.T) {
 	n.startSyncPeer(s)
 	if got := n.stopping; !got {
 		t.Fatal("Network.Stop did not set stopping flag")
+	}
+}
+
+
+func TestFatalAcceptRejectFrameDoesNotExposeCause(t *testing.T) {
+	n, closeN := testNetwork(t, nil)
+	defer closeN()
+	_, client, wire := l02PipeSession(t, n, func(*block.Block) (bool, string, error) {
+		return false, "storage", errors.Join(errors.New("SECRET-PATH-/tmp/secret-journal: permission denied"), storage.ErrStoreFailed)
+	})
+	defer client.Close()
+	_ = client.SetWriteDeadline(time.Now().Add(5 * time.Second))
+	if _, err := client.Write(wire); err != nil {
+		t.Fatalf("write NEW_BLOCK: %v", err)
+	}
+	_ = client.SetReadDeadline(time.Now().Add(5 * time.Second))
+	frame, err := p2p.ReadFrame(client)
+	if err != nil {
+		t.Fatalf("read fatal NEW_BLOCK rejection: %v", err)
+	}
+	reject, err := p2p.DecodeReject(frame)
+	if err != nil {
+		t.Fatalf("decode fatal NEW_BLOCK rejection: %v", err)
+	}
+	if strings.Contains(reject.Reason, "SECRET-PATH") || strings.Contains(reject.Reason, "/tmp/") {
+		t.Fatalf("P2P rejection leaked fatal cause: %q", reject.Reason)
+	}
+	if reject.Reason != "node unavailable" {
+		t.Fatalf("P2P rejection reason = %q, want %q", reject.Reason, "node unavailable")
 	}
 }

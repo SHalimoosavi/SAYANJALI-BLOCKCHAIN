@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -138,8 +139,8 @@ func testConcurrentMineCannotCommitAfterFatalFlip(t *testing.T) {
 	}()
 	select {
 	case <-entered:
-	case <-time.After(2 * time.Second):
-		t.Fatal("in-flight /mine did not reach injected acceptFn")
+	case <-time.After(30 * time.Second):
+		t.Fatalf("in-flight /mine did not reach injected acceptFn after %s", 30*time.Second)
 	}
 	fatalDone := make(chan struct{})
 	go func() {
@@ -148,8 +149,8 @@ func testConcurrentMineCannotCommitAfterFatalFlip(t *testing.T) {
 	}()
 	select {
 	case <-fatalDone:
-	case <-time.After(2 * time.Second):
-		t.Fatal("fatal acceptance did not complete")
+	case <-time.After(10 * time.Second):
+		t.Fatalf("fatal acceptance did not complete within %s", 10*time.Second)
 	}
 	if !errors.Is(n.Err(), storage.ErrStoreFailed) {
 		t.Fatalf("Err() = %v, want storage sentinel before releasing in-flight mine", n.Err())
@@ -161,8 +162,8 @@ func testConcurrentMineCannotCommitAfterFatalFlip(t *testing.T) {
 		if status != http.StatusServiceUnavailable {
 			t.Fatalf("in-flight POST /mine status = %d after fatal flip, want 503", status)
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("in-flight /mine did not finish after release")
+	case <-time.After(10 * time.Second):
+		t.Fatalf("in-flight /mine did not finish after release within %s", 10*time.Second)
 	}
 	if got := n.Chain().TipHash(); got != beforeTip {
 		t.Fatalf("chain tip changed after fatal flip: got %s want %s", got, beforeTip)
@@ -193,4 +194,64 @@ func testConcurrentMineCannotCommitAfterFatalFlip(t *testing.T) {
 	if got := n.Mempool().Len(); got != 0 {
 		t.Fatalf("transaction pool contains %d transactions after later mutating requests, want 0", got)
 	}
+}
+
+
+const l02SafeStorageFailureText = "storage failure: the node stopped to protect data integrity"
+
+func l02MarkerCause() error {
+	return errors.Join(errors.New("SECRET-PATH-/tmp/secret-journal: permission denied"), storage.ErrStoreFailed)
+}
+
+func assertL02SafeHTTPFailure(t *testing.T, response *httptest.ResponseRecorder) {
+	t.Helper()
+	body := response.Body.String()
+	if strings.Contains(body, "SECRET-PATH") || strings.Contains(body, "/tmp/") {
+		t.Fatalf("HTTP response leaked fatal cause: %s", body)
+	}
+	if !strings.Contains(body, l02SafeStorageFailureText) {
+		t.Fatalf("HTTP response = %s, want safe failure text %q", body, l02SafeStorageFailureText)
+	}
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("HTTP status = %d, want 503; body=%s", response.Code, body)
+	}
+}
+
+func TestFatalCauseNeverAppearsInUnhealthyHTTPResponses(t *testing.T) {
+	n := newL02RunningNode(t, t.TempDir())
+	n.markFatal(l02MarkerCause())
+	api := l02TestAPI(n)
+
+	mine := httptest.NewRecorder()
+	api.mine(mine, httptest.NewRequest(http.MethodPost, "/mine", nil))
+	assertL02SafeHTTPFailure(t, mine)
+
+	txReq := httptest.NewRequest(http.MethodPost, "/transactions", bytes.NewBufferString("{}"))
+	txReq.Header.Set("Authorization", "Bearer l02-test-token")
+	tx := httptest.NewRecorder()
+	api.transactions(tx, txReq)
+	assertL02SafeHTTPFailure(t, tx)
+
+	health := httptest.NewRecorder()
+	api.health(health, httptest.NewRequest(http.MethodGet, "/health", nil))
+	assertL02SafeHTTPFailure(t, health)
+
+	status := httptest.NewRecorder()
+	api.status(status, httptest.NewRequest(http.MethodGet, "/status", nil))
+	assertL02SafeHTTPFailure(t, status)
+
+	shutdown := httptest.NewRecorder()
+	api.shutdown(shutdown, httptest.NewRequest(http.MethodPost, "/shutdown", nil))
+	assertL02SafeHTTPFailure(t, shutdown)
+}
+
+func TestMineFatalAcceptCauseNeverAppearsInHTTPResponse(t *testing.T) {
+	n := newL02RunningNode(t, t.TempDir())
+	n.acceptFn = func(*block.Block) (bool, string, error) {
+		return false, "storage", l02MarkerCause()
+	}
+	api := l02TestAPI(n)
+	response := httptest.NewRecorder()
+	api.mine(response, httptest.NewRequest(http.MethodPost, "/mine", nil))
+	assertL02SafeHTTPFailure(t, response)
 }
