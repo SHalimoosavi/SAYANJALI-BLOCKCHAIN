@@ -868,7 +868,7 @@ func (s *Session) readLoop() {
 		if err := s.handle(f); err != nil {
 			s.n.cfg.Logger.Debug("peer message rejected", "peer", s.p.ID, "type", f.Type.String(), "error", err)
 			if errors.Is(err, storage.ErrStoreFailed) {
-				_ = s.writeReject(f.RequestID, p2p.RejectInvalidRequest, true, err.Error())
+				_ = s.writeReject(f.RequestID, p2p.RejectInvalidRequest, true, "node unavailable")
 				return
 			}
 			state := s.n.recordReputationViolation(

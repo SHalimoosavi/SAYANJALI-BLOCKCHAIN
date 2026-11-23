@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"sync/atomic"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -252,7 +252,6 @@ func TestUnknownAncestorSyncGoroutineStopsOnShutdown(t *testing.T) {
 		t.Fatal("Network.Stop did not set stopping flag")
 	}
 }
-
 
 func TestFatalAcceptRejectFrameDoesNotExposeCause(t *testing.T) {
 	n, closeN := testNetwork(t, nil)

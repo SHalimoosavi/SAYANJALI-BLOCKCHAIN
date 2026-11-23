@@ -203,6 +203,20 @@ func l02MarkerCause() error {
 	return errors.Join(errors.New("SECRET-PATH-/tmp/secret-journal: permission denied"), storage.ErrStoreFailed)
 }
 
+type l02FatalOnReadBody struct {
+	reader  *strings.Reader
+	trigger func()
+	fired   bool
+}
+
+func (r *l02FatalOnReadBody) Read(p []byte) (int, error) {
+	if !r.fired {
+		r.fired = true
+		r.trigger()
+	}
+	return r.reader.Read(p)
+}
+
 func assertL02SafeHTTPFailure(t *testing.T, response *httptest.ResponseRecorder) {
 	t.Helper()
 	body := response.Body.String()
@@ -253,5 +267,22 @@ func TestMineFatalAcceptCauseNeverAppearsInHTTPResponse(t *testing.T) {
 	api := l02TestAPI(n)
 	response := httptest.NewRecorder()
 	api.mine(response, httptest.NewRequest(http.MethodPost, "/mine", nil))
+	assertL02SafeHTTPFailure(t, response)
+}
+
+
+func TestTransactionFatalCauseNeverAppearsAfterHealthPrecheck(t *testing.T) {
+	n := newL02RunningNode(t, t.TempDir())
+	api := l02TestAPI(n)
+	body := &l02FatalOnReadBody{
+		reader: strings.NewReader("{}"),
+		trigger: func() {
+			n.markFatal(l02MarkerCause())
+		},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/transactions", body)
+	req.Header.Set("Authorization", "Bearer l02-test-token")
+	response := httptest.NewRecorder()
+	api.transactions(response, req)
 	assertL02SafeHTTPFailure(t, response)
 }
