@@ -196,7 +196,6 @@ func testConcurrentMineCannotCommitAfterFatalFlip(t *testing.T) {
 	}
 }
 
-
 const l02SafeStorageFailureText = "storage failure: the node stopped to protect data integrity"
 
 func l02MarkerCause() error {
@@ -269,7 +268,6 @@ func TestMineFatalAcceptCauseNeverAppearsInHTTPResponse(t *testing.T) {
 	api.mine(response, httptest.NewRequest(http.MethodPost, "/mine", nil))
 	assertL02SafeHTTPFailure(t, response)
 }
-
 
 func TestTransactionFatalCauseNeverAppearsAfterHealthPrecheck(t *testing.T) {
 	n := newL02RunningNode(t, t.TempDir())
